@@ -1,0 +1,59 @@
+diff --git a/launch/tier4_localization_launch/launch/pose_twist_estimator/pose_twist_estimator.launch.xml b/launch/tier4_localization_launch/launch/pose_twist_estimator/pose_twist_estimator.launch.xml
+index c09443be8..514f8c3ec 100644
+--- a/launch/tier4_localization_launch/launch/pose_twist_estimator/pose_twist_estimator.launch.xml
++++ b/launch/tier4_localization_launch/launch/pose_twist_estimator/pose_twist_estimator.launch.xml
+@@ -1,7 +1,7 @@
+ <?xml version="1.0"?>
+ <launch>
+   <!-- only when running with a real vehicle, the pose_initializer judges the stop -->
+-  <let name="stop_check_enabled" if="$(eval &quot;'$(var system_run_mode)'=='online'&quot;)" value="true"/>
++  <let name="stop_check_enabled" if="$(eval &quot;'$(var system_run_mode)'=='online'&quot;)" value="false"/>
+   <let name="stop_check_enabled" if="$(eval &quot;'$(var system_run_mode)'=='logging_simulation'&quot;)" value="false"/>
+ 
+   <!-- When gnss_enabled is false, automatic_pose_initializer will not run, only manual initial position estimation is available. -->
+diff --git a/launch/tier4_vehicle_launch/urdf/vehicle.xacro b/launch/tier4_vehicle_launch/urdf/vehicle.xacro
+index 8c3ecf94c..eb6540d2d 100644
+--- a/launch/tier4_vehicle_launch/urdf/vehicle.xacro
++++ b/launch/tier4_vehicle_launch/urdf/vehicle.xacro
+@@ -2,6 +2,7 @@
+ <robot name="vehicle" xmlns:xacro="http://ros.org/wiki/xacro">
+   <xacro:arg name="vehicle_model" default=""/>
+   <xacro:arg name="sensor_model" default=""/>
++  <xacro:arg name="sensors_calibration" default="sensors_calibration"/>
+ 
+   <!-- vehicle -->
+   <xacro:property name="vehicle_model_property" value="$(arg vehicle_model)"/>
+diff --git a/localization/ndt_scan_matcher/src/ndt_scan_matcher_core.cpp b/localization/ndt_scan_matcher/src/ndt_scan_matcher_core.cpp
+index 1e3188a15..9644b3f62 100644
+--- a/localization/ndt_scan_matcher/src/ndt_scan_matcher_core.cpp
++++ b/localization/ndt_scan_matcher/src/ndt_scan_matcher_core.cpp
+@@ -1038,7 +1038,7 @@ geometry_msgs::msg::PoseWithCovarianceStamped NDTScanMatcher::align_pose(
+     geometry_msgs::msg::Vector3 init_rpy;
+     init_rpy.x = base_rpy.x + uniform_to_normal(input[3]) * stddev_roll;
+     init_rpy.y = base_rpy.y + uniform_to_normal(input[4]) * stddev_pitch;
+-    init_rpy.z = base_rpy.z + input[5] * M_PI;
++    init_rpy.z = base_rpy.z;
+     tf2::Quaternion tf_quaternion;
+     tf_quaternion.setRPY(init_rpy.x, init_rpy.y, init_rpy.z);
+     initial_pose.orientation = tf2::toMsg(tf_quaternion);
+diff --git a/system/default_ad_api_helpers/ad_api_adaptors/config/initial_pose.param.yaml b/system/default_ad_api_helpers/ad_api_adaptors/config/initial_pose.param.yaml
+index 46748a022..f89a27a11 100644
+--- a/system/default_ad_api_helpers/ad_api_adaptors/config/initial_pose.param.yaml
++++ b/system/default_ad_api_helpers/ad_api_adaptors/config/initial_pose.param.yaml
+@@ -4,10 +4,10 @@
+     # from initialpose (Rviz's 2DPoseEstimate)
+     initial_pose_particle_covariance:
+       [
+-        4.0, 0.0, 0.0,  0.0,  0.0,  0.0,
+-        0.0, 4.0, 0.0,  0.0,  0.0,  0.0,
+-        0.0, 0.0, 0.01, 0.0,  0.0,  0.0,
+-        0.0, 0.0, 0.0,  0.01, 0.0,  0.0,
+-        0.0, 0.0, 0.0,  0.0,  0.01, 0.0,
+-        0.0, 0.0, 0.0,  0.0,  0.0,  1.0,
++        0.0001, 0.0, 0.0,  0.0,  0.0,  0.0,
++        0.0, 0.0001, 0.0,  0.0,  0.0,  0.0,
++        0.0, 0.0, 0.0, 0.0,  0.0,  0.0,
++        0.0, 0.0, 0.0,  0.0, 0.0,  0.0,
++        0.0, 0.0, 0.0,  0.0,  0.0, 0.0,
++        0.0, 0.0, 0.0,  0.0,  0.0,  0.001,
+       ]
