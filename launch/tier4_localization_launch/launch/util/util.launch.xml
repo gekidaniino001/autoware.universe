@@ -20,9 +20,9 @@
   </group>
 
   <!-- pose_initializer (Automatic call from AD API) -->
-  <group>
+  <!-- <group>
     <include file="$(find-pkg-share automatic_pose_initializer)/launch/automatic_pose_initializer.launch.xml"/>
-  </group>
+  </group> -->
 
   <!-- util -->
   <group>

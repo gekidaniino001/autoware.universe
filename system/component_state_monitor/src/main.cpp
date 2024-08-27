@@ -57,6 +57,11 @@ const std::unordered_map<Module, std::string> module_names = {
 
 StateMonitor::StateMonitor(const rclcpp::NodeOptions & options) : Node("state", options)
 {
+  iino_sim_ = false;
+  char *s = getenv( "IINO_SIM" );
+  if ( s && *s && *s != '0' )
+    iino_sim_ = true;
+
   for (const auto & type : types) {
     for (const auto & module : modules) {
       const auto name = type_names.at(type) + "." + module_names.at(module);
@@ -112,7 +117,15 @@ void StateMonitor::on_timer()
     const auto launch_state = state(topics_[StateType::kLaunch][module]);
     const auto auto_state = state(topics_[StateType::kAutonomous][module]);
     update_state(StateType::kLaunch, module, launch_state);
-    update_state(StateType::kAutonomous, module, launch_state & auto_state);
+
+    bool auto_v = ( launch_state & auto_state );
+    if ( iino_sim_ &&
+         ( module == Module::kLocalization ||
+           module == Module::kPerception ) &&
+         ! auto_v )
+      auto_v = true;
+
+    update_state(StateType::kAutonomous, module, auto_v);
   }
 }
 

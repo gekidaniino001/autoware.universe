@@ -222,7 +222,10 @@ bool DistortionCorrectorComponent::undistortPointCloud(
 
   // For performance, do not instantiate `rclcpp::Time` inside of the for-loop
   double twist_stamp = rclcpp::Time(twist_it->header.stamp).seconds();
-  double imu_stamp = rclcpp::Time(imu_it->header.stamp).seconds();
+  double imu_stamp = 0.0;
+  if (use_imu_ && !angular_velocity_queue_.empty()) {
+    imu_stamp = rclcpp::Time(imu_it->header.stamp).seconds();
+  }
 
   // For performance, instantiate outside of the for-loop
   tf2::Quaternion baselink_quat{};

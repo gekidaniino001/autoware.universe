@@ -34,6 +34,9 @@ def launch_setup(context, *args, **kwargs):
     with open(LaunchConfiguration("vehicle_param_file").perform(context), "r") as f:
         vehicle_info_param = yaml.safe_load(f)["/**"]["ros__parameters"]
 
+    with open(LaunchConfiguration("vehicle_param_file_lane").perform(context), "r") as f:
+        vehicle_info_param_lane = yaml.safe_load(f)["/**"]["ros__parameters"]
+
     with open(LaunchConfiguration("nearest_search_param_path").perform(context), "r") as f:
         nearest_search_param = yaml.safe_load(f)["/**"]["ros__parameters"]
 
@@ -78,6 +81,8 @@ def launch_setup(context, *args, **kwargs):
             ("~/output/slope_angle", "longitudinal/slope_angle"),
             ("~/output/longitudinal_diagnostic", "longitudinal/diagnostic"),
             ("~/output/control_cmd", "control_cmd"),
+            # ("/diagnostices", "depature_chk"),
+
         ],
         parameters=[
             {
@@ -109,7 +114,7 @@ def launch_setup(context, *args, **kwargs):
                 "/control/trajectory_follower/lateral/predicted_trajectory",
             ),
         ],
-        parameters=[nearest_search_param, lane_departure_checker_param, vehicle_info_param],
+        parameters=[nearest_search_param, lane_departure_checker_param, vehicle_info_param_lane],
         extra_arguments=[{"use_intra_process_comms": LaunchConfiguration("use_intra_process")}],
     )
 

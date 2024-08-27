@@ -58,6 +58,24 @@ enum class Direction { NONE, LEFT, RIGHT };
 enum class PullOverDirection { NONE, LEFT, RIGHT };
 enum class PullOutDirection { NONE, LEFT, RIGHT };
 
+struct id_buf {
+  int n, buf[ 20 ];
+
+  id_buf() { n = 0; }
+  bool is_full() {  return n >= int( sizeof( buf ) / sizeof( *buf ) ); }
+  void add( int id ) { if ( ! is_full() ) buf[ n++ ] = id; }
+
+  bool is_in( int id ) {
+    int i;
+    for ( i=0; i < n; i++ )
+      if ( buf[ i ] == id )
+        return true;
+
+    return false;
+  }
+
+};
+
 class RouteHandler
 {
 public:
@@ -87,7 +105,7 @@ public:
   // for routing
   bool planPathLaneletsBetweenCheckpoints(
     const Pose & start_checkpoint, const Pose & goal_checkpoint,
-    lanelet::ConstLanelets * path_lanelets) const;
+    lanelet::ConstLanelets * path_lanelets, id_buf *start_ng_id=nullptr ) const;
   std::vector<LaneletSegment> createMapSegments(const lanelet::ConstLanelets & path_lanelets) const;
   static bool isRouteLooped(const RouteSections & route_sections);
 

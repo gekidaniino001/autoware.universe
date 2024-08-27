@@ -1,0 +1,1711 @@
+diff --git a/autoware/src/universe/autoware.universe/common/motion_utils/src/vehicle/vehicle_state_checker.cpp b/autoware/src/universe/autoware.universe/common/motion_utils/src/vehicle/vehicle_state_checker.cpp
+index a743bfaa..e79e08c8 100644
+--- a/autoware/src/universe/autoware.universe/common/motion_utils/src/vehicle/vehicle_state_checker.cpp
++++ b/autoware/src/universe/autoware.universe/common/motion_utils/src/vehicle/vehicle_state_checker.cpp
+@@ -51,7 +51,8 @@ bool VehicleStopCheckerBase::isVehicleStopped(const double stop_duration) const
+     return false;
+   }
+ 
+-  constexpr double squared_stop_velocity = 1e-3 * 1e-3;
++  constexpr double squared_stop_velocity = 0.1 * 0.1;
++
+   const auto now = clock_->now();
+ 
+   const auto time_buffer_back = now - twist_buffer_.back().header.stamp;
+diff --git a/autoware/src/universe/autoware.universe/control/mpc_lateral_controller/src/qp_solver/qp_solver_osqp.cpp b/autoware/src/universe/autoware.universe/control/mpc_lateral_controller/src/qp_solver/qp_solver_osqp.cpp
+index 9bd4d4ab..dba803e8 100644
+--- a/autoware/src/universe/autoware.universe/control/mpc_lateral_controller/src/qp_solver/qp_solver_osqp.cpp
++++ b/autoware/src/universe/autoware.universe/control/mpc_lateral_controller/src/qp_solver/qp_solver_osqp.cpp
+@@ -60,8 +60,14 @@ bool QPSolverOSQP::solve(
+ 
+   const int status_val = std::get<3>(result);
+   if (status_val != 1) {
+-    // TODO(Horibe): Should return false and the failure must be handled in an appropriate way.
+     RCLCPP_WARN(logger_, "optimization failed : %s", osqpsolver_.getStatusMessage().c_str());
++    return false;
++  }
++  const auto has_nan =
++    std::any_of(U_osqp.begin(), U_osqp.end(), [](const auto v) { return std::isnan(v); });
++  if (has_nan) {
++    RCLCPP_WARN(logger_, "optimization failed: result contains NaN values");
++    return false;
+   }
+ 
+   // polish status: successful (1), unperformed (0), (-1) unsuccessful
+diff --git a/autoware/src/universe/autoware.universe/launch/tier4_control_launch/launch/control.launch.py b/autoware/src/universe/autoware.universe/launch/tier4_control_launch/launch/control.launch.py
+index c658b29c..9e490e66 100644
+--- a/autoware/src/universe/autoware.universe/launch/tier4_control_launch/launch/control.launch.py
++++ b/autoware/src/universe/autoware.universe/launch/tier4_control_launch/launch/control.launch.py
+@@ -34,6 +34,9 @@ def launch_setup(context, *args, **kwargs):
+     with open(LaunchConfiguration("vehicle_param_file").perform(context), "r") as f:
+         vehicle_info_param = yaml.safe_load(f)["/**"]["ros__parameters"]
+ 
++    with open(LaunchConfiguration("vehicle_param_file_lane").perform(context), "r") as f:
++        vehicle_info_param_lane = yaml.safe_load(f)["/**"]["ros__parameters"]
++
+     with open(LaunchConfiguration("nearest_search_param_path").perform(context), "r") as f:
+         nearest_search_param = yaml.safe_load(f)["/**"]["ros__parameters"]
+ 
+@@ -78,6 +81,8 @@ def launch_setup(context, *args, **kwargs):
+             ("~/output/slope_angle", "longitudinal/slope_angle"),
+             ("~/output/longitudinal_diagnostic", "longitudinal/diagnostic"),
+             ("~/output/control_cmd", "control_cmd"),
++            # ("/diagnostices", "depature_chk"),
++
+         ],
+         parameters=[
+             {
+@@ -109,7 +114,7 @@ def launch_setup(context, *args, **kwargs):
+                 "/control/trajectory_follower/lateral/predicted_trajectory",
+             ),
+         ],
+-        parameters=[nearest_search_param, lane_departure_checker_param, vehicle_info_param],
++        parameters=[nearest_search_param, lane_departure_checker_param, vehicle_info_param_lane],
+         extra_arguments=[{"use_intra_process_comms": LaunchConfiguration("use_intra_process")}],
+     )
+ 
+diff --git a/autoware/src/universe/autoware.universe/launch/tier4_localization_launch/launch/localization.launch.xml b/autoware/src/universe/autoware.universe/launch/tier4_localization_launch/launch/localization.launch.xml
+index 210e5d04..d771ea7a 100644
+--- a/autoware/src/universe/autoware.universe/launch/tier4_localization_launch/launch/localization.launch.xml
++++ b/autoware/src/universe/autoware.universe/launch/tier4_localization_launch/launch/localization.launch.xml
+@@ -10,7 +10,7 @@
+   <arg name="pose_initializer_param_path"/>
+   <arg name="pose_initializer_common_param_path"/>
+ 
+-  <arg name="input/pointcloud" default="/sensing/lidar/top/outlier_filtered/pointcloud" description="The topic will be used in the localization util module"/>
++  <arg name="input/pointcloud" default="/sensing/lidar/concatenated/pointcloud" description="The topic will be used in the localization util module"/>
+   <arg name="use_pointcloud_container" default="true" description="launch pointcloud container"/>
+   <arg name="pointcloud_container_name" default="pointcloud_container"/>
+ 
+diff --git a/autoware/src/universe/autoware.universe/launch/tier4_localization_launch/launch/util/util.launch.xml b/autoware/src/universe/autoware.universe/launch/tier4_localization_launch/launch/util/util.launch.xml
+index 31a453c0..98ed260b 100644
+--- a/autoware/src/universe/autoware.universe/launch/tier4_localization_launch/launch/util/util.launch.xml
++++ b/autoware/src/universe/autoware.universe/launch/tier4_localization_launch/launch/util/util.launch.xml
+@@ -20,9 +20,9 @@
+   </group>
+ 
+   <!-- pose_initializer (Automatic call from AD API) -->
+-  <group>
++  <!-- <group>
+     <include file="$(find-pkg-share automatic_pose_initializer)/launch/automatic_pose_initializer.launch.xml"/>
+-  </group>
++  </group> -->
+ 
+   <!-- util -->
+   <group>
+diff --git a/autoware/src/universe/autoware.universe/launch/tier4_vehicle_launch/urdf/vehicle.xacro b/autoware/src/universe/autoware.universe/launch/tier4_vehicle_launch/urdf/vehicle.xacro
+index 8c3ecf94..eb6540d2 100644
+--- a/autoware/src/universe/autoware.universe/launch/tier4_vehicle_launch/urdf/vehicle.xacro
++++ b/autoware/src/universe/autoware.universe/launch/tier4_vehicle_launch/urdf/vehicle.xacro
+@@ -2,6 +2,7 @@
+ <robot name="vehicle" xmlns:xacro="http://ros.org/wiki/xacro">
+   <xacro:arg name="vehicle_model" default=""/>
+   <xacro:arg name="sensor_model" default=""/>
++  <xacro:arg name="sensors_calibration" default="sensors_calibration"/>
+ 
+   <!-- vehicle -->
+   <xacro:property name="vehicle_model_property" value="$(arg vehicle_model)"/>
+diff --git a/autoware/src/universe/autoware.universe/localization/ekf_localizer/config/ekf_localizer.param.yaml b/autoware/src/universe/autoware.universe/localization/ekf_localizer/config/ekf_localizer.param.yaml
+index 322325d2..0797b644 100644
+--- a/autoware/src/universe/autoware.universe/localization/ekf_localizer/config/ekf_localizer.param.yaml
++++ b/autoware/src/universe/autoware.universe/localization/ekf_localizer/config/ekf_localizer.param.yaml
+@@ -19,5 +19,5 @@
+ 
+     # for process model
+     proc_stddev_yaw_c: 0.005
+-    proc_stddev_vx_c: 10.0
++    proc_stddev_vx_c: 0.2
+     proc_stddev_wz_c: 5.0
+diff --git a/autoware/src/universe/autoware.universe/localization/ndt_scan_matcher/config/ndt_scan_matcher.param.yaml b/autoware/src/universe/autoware.universe/localization/ndt_scan_matcher/config/ndt_scan_matcher.param.yaml
+index a5d8142b..bc978b76 100644
+--- a/autoware/src/universe/autoware.universe/localization/ndt_scan_matcher/config/ndt_scan_matcher.param.yaml
++++ b/autoware/src/universe/autoware.universe/localization/ndt_scan_matcher/config/ndt_scan_matcher.param.yaml
+@@ -32,16 +32,16 @@
+ 
+     # If converged_param_type is 1
+     # Threshold for deciding whether to trust the estimation result
+-    converged_param_nearest_voxel_transformation_likelihood: 2.3
++    converged_param_nearest_voxel_transformation_likelihood: 2.6
+ 
+     # The number of particles to estimate initial pose
+-    initial_estimate_particles_num: 100
++    initial_estimate_particles_num: 3
+ 
+     # Tolerance of timestamp difference between initial_pose and sensor pointcloud. [sec]
+     initial_pose_timeout_sec: 1.0
+ 
+     # Tolerance of distance difference between two initial poses used for linear interpolation. [m]
+-    initial_pose_distance_tolerance_m: 10.0
++    initial_pose_distance_tolerance_m: 1000000.0
+ 
+     # Number of threads used for parallel computing
+     num_threads: 4
+@@ -75,7 +75,7 @@
+ 
+     # cspell: ignore degrounded
+     # A flag for using scan matching score based on de-grounded LiDAR scan
+-    estimate_scores_for_degrounded_scan: false
++    estimate_scores_for_degrounded_scan: True
+ 
+     # If lidar_point.z - base_link.z <= this threshold , the point will be removed
+-    z_margin_for_ground_removal: 0.8
++    z_margin_for_ground_removal: 0.6
+diff --git a/autoware/src/universe/autoware.universe/localization/pose_initializer/config/pose_initializer_common.param.yaml b/autoware/src/universe/autoware.universe/localization/pose_initializer/config/pose_initializer_common.param.yaml
+index a05cc7c3..46fb2c63 100644
+--- a/autoware/src/universe/autoware.universe/localization/pose_initializer/config/pose_initializer_common.param.yaml
++++ b/autoware/src/universe/autoware.universe/localization/pose_initializer/config/pose_initializer_common.param.yaml
+@@ -15,12 +15,13 @@
+       ]
+ 
+     # output
++    # initialpose3dの分散
+     output_pose_covariance:
+       [
+-        1.0, 0.0, 0.0,  0.0,  0.0,  0.0,
+-        0.0, 1.0, 0.0,  0.0,  0.0,  0.0,
+-        0.0, 0.0, 0.01, 0.0,  0.0,  0.0,
+-        0.0, 0.0, 0.0,  0.01, 0.0,  0.0,
+-        0.0, 0.0, 0.0,  0.0,  0.01, 0.0,
+-        0.0, 0.0, 0.0,  0.0,  0.0,  0.2,
++        0.0, 0.0, 0.0,  0.0,  0.0,  0.0,
++        0.0, 0.0, 0.0,  0.0,  0.0,  0.0,
++        0.0, 0.0, 0.0,  0.0,  0.0,  0.0,
++        0.0, 0.0, 0.0,  0.0,  0.0,  0.0,
++        0.0, 0.0, 0.0,  0.0,  0.0,  0.0,
++        0.0, 0.0, 0.0,  0.0,  0.0,  0.0,
+       ]
+diff --git a/autoware/src/universe/autoware.universe/map/map_loader/src/pointcloud_map_loader/pointcloud_map_loader_node.cpp b/autoware/src/universe/autoware.universe/map/map_loader/src/pointcloud_map_loader/pointcloud_map_loader_node.cpp
+index 7feea26b..728e997f 100644
+--- a/autoware/src/universe/autoware.universe/map/map_loader/src/pointcloud_map_loader/pointcloud_map_loader_node.cpp
++++ b/autoware/src/universe/autoware.universe/map/map_loader/src/pointcloud_map_loader/pointcloud_map_loader_node.cpp
+@@ -96,7 +96,7 @@ std::map<std::string, PCDFileMetadata> PointCloudMapLoaderNode::getPCDMetadata(
+     }
+ 
+     pcd_metadata_dict = loadPCDMetadata(pcd_metadata_path);
+-    pcd_metadata_dict = replaceWithAbsolutePath(pcd_metadata_dict_, pcd_paths);
++    pcd_metadata_dict = replaceWithAbsolutePath(pcd_metadata_dict, pcd_paths);
+     RCLCPP_INFO_STREAM(get_logger(), "Loaded PCD metadata: " << pcd_metadata_path);
+   } else {
+     // An exception when using a single file PCD map so that the users do not have to provide
+diff --git a/autoware/src/universe/autoware.universe/map/map_loader/src/pointcloud_map_loader/pointcloud_map_loader_node.hpp b/autoware/src/universe/autoware.universe/map/map_loader/src/pointcloud_map_loader/pointcloud_map_loader_node.hpp
+index 27c90080..a4f4947a 100644
+--- a/autoware/src/universe/autoware.universe/map/map_loader/src/pointcloud_map_loader/pointcloud_map_loader_node.hpp
++++ b/autoware/src/universe/autoware.universe/map/map_loader/src/pointcloud_map_loader/pointcloud_map_loader_node.hpp
+@@ -38,9 +38,6 @@ public:
+   explicit PointCloudMapLoaderNode(const rclcpp::NodeOptions & options);
+ 
+ private:
+-  // ros param
+-  std::map<std::string, PCDFileMetadata> pcd_metadata_dict_;
+-
+   std::unique_ptr<PointcloudMapLoaderModule> pcd_map_loader_;
+   std::unique_ptr<PointcloudMapLoaderModule> downsampled_pcd_map_loader_;
+   std::unique_ptr<PartialMapLoaderModule> partial_map_loader_;
+diff --git a/autoware/src/universe/autoware.universe/planning/mission_planner/src/lanelet2_plugins/default_planner.cpp b/autoware/src/universe/autoware.universe/planning/mission_planner/src/lanelet2_plugins/default_planner.cpp
+index dbd561ba..76a12328 100644
+--- a/autoware/src/universe/autoware.universe/planning/mission_planner/src/lanelet2_plugins/default_planner.cpp
++++ b/autoware/src/universe/autoware.universe/planning/mission_planner/src/lanelet2_plugins/default_planner.cpp
+@@ -400,9 +400,12 @@ PlannerPlugin::LaneletRoute DefaultPlanner::plan(const RoutePoints & points)
+     const auto start_check_point = points.at(i - 1);
+     const auto goal_check_point = points.at(i);
+     lanelet::ConstLanelets path_lanelets;
+-    if (!route_handler_.planPathLaneletsBetweenCheckpoints(
+-          start_check_point, goal_check_point, &path_lanelets)) {
+-      return route_msg;
++
++    route_handler::id_buf start_ng_id;
++    while (!route_handler_.planPathLaneletsBetweenCheckpoints(
++          start_check_point, goal_check_point, &path_lanelets, &start_ng_id)) {
++      if ( start_ng_id.is_full() )
++        return route_msg;
+     }
+     for (const auto & lane : path_lanelets) {
+       all_route_lanelets.push_back(lane);
+diff --git a/autoware/src/universe/autoware.universe/planning/mission_planner/src/mission_planner/arrival_checker.cpp b/autoware/src/universe/autoware.universe/planning/mission_planner/src/mission_planner/arrival_checker.cpp
+index be37d94b..f3b34600 100644
+--- a/autoware/src/universe/autoware.universe/planning/mission_planner/src/mission_planner/arrival_checker.cpp
++++ b/autoware/src/universe/autoware.universe/planning/mission_planner/src/mission_planner/arrival_checker.cpp
+@@ -17,6 +17,14 @@
+ #include <tier4_autoware_utils/tier4_autoware_utils.hpp>
+ 
+ #include <tf2/utils.h>
++#include <iostream>
++#include <iterator>
++#include <string>
++
++using std::cin;
++using std::cout;
++using std::endl;
++using std::string;
+ 
+ namespace mission_planner
+ {
+@@ -24,13 +32,40 @@ namespace mission_planner
+ ArrivalChecker::ArrivalChecker(rclcpp::Node * node) : vehicle_stop_checker_(node)
+ {
+   const double angle_deg = node->declare_parameter<double>("arrival_check_angle_deg");
+-  angle_ = tier4_autoware_utils::deg2rad(angle_deg);
+-  distance_ = node->declare_parameter<double>("arrival_check_distance");
+-  duration_ = node->declare_parameter<double>("arrival_check_duration");
++  default_angle_ = tier4_autoware_utils::deg2rad(angle_deg);
++  angle_ = default_angle_;
++  default_distance_ = node->declare_parameter<double>("arrival_check_distance");
++  distance_ = default_distance_;
++  default_duration_ = node->declare_parameter<double>("arrival_check_duration");
++  duration_ = default_duration_;
++  can_change_params_ = node->declare_parameter<bool>("can_change_params", true);
++  receiving_topic_ = false;
++
++  sub_angle_deg_ = node->create_subscription<std_msgs::msg::Float64>(
++    "input/arrival_check_angle", 1, [this](const std_msgs::msg::Float64::ConstSharedPtr msg) {
++      set_angle(msg->data);
++    });
++  
++  sub_distance_ = node->create_subscription<std_msgs::msg::Float64>(
++    "input/arrival_check_distance", 1,
++    [this](const std_msgs::msg::Float64::ConstSharedPtr msg) { set_distance(msg->data);});
++  
++  sub_duration_ = node->create_subscription<std_msgs::msg::Float64>(
++    "input/arrival_check_duration", 1,
++    [this](const std_msgs::msg::Float64::ConstSharedPtr msg) { set_duration(msg->data); });
+ 
+   sub_goal_ = node->create_subscription<PoseWithUuidStamped>(
+     "input/modified_goal", 1,
+     [this](const PoseWithUuidStamped::ConstSharedPtr msg) { modify_goal(*msg); });
++
++  pub_unmet_goal_reason_ = node->create_publisher<std_msgs::msg::String>("debug/unmet_goal_reason", 1);
++  pub_goal_distance_ = node->create_publisher<std_msgs::msg::Float64>("debug/goal_distance", 1);
++  pub_arrival_distance_ = node->create_publisher<std_msgs::msg::Float64>("debug/arrival_distance", 1);
++
++  tmr_pub_ = node->create_wall_timer(
++    std::chrono::milliseconds(100), [this]() { publish_debug_info(); });
++  tmr_check_receiving_topic_ = node->create_wall_timer(
++    std::chrono::milliseconds(5000), [this]() { check_receiving_topic(); });
+ }
+ 
+ void ArrivalChecker::set_goal()
+@@ -45,6 +80,16 @@ void ArrivalChecker::set_goal(const PoseWithUuidStamped & goal)
+   goal_with_uuid_ = goal;
+ }
+ 
++void ArrivalChecker::check_receiving_topic()
++{
++  if (!receiving_topic_) {
++    distance_ = default_distance_;
++    angle_ = default_angle_;
++    duration_ = default_duration_;
++  }
++  receiving_topic_ = false;
++}
++
+ void ArrivalChecker::modify_goal(const PoseWithUuidStamped & modified_goal)
+ {
+   if (!goal_with_uuid_) {
+@@ -56,21 +101,70 @@ void ArrivalChecker::modify_goal(const PoseWithUuidStamped & modified_goal)
+   set_goal(modified_goal);
+ }
+ 
+-bool ArrivalChecker::is_arrived(const PoseStamped & pose) const
++void ArrivalChecker::set_distance(double distance)
++{
++  receiving_topic_ = true;
++  if (can_change_params_ && distance >= 0)
++  {
++    distance_ = distance;
++  } else {
++    distance_ = default_distance_;
++  }
++}
++
++void ArrivalChecker::set_angle(double angle)
++{
++  receiving_topic_ = true;
++  if (can_change_params_ && angle >= 0)
++  {
++    angle_ = tier4_autoware_utils::deg2rad(angle);
++  } else {
++    angle_ = default_angle_;
++  }
++}
++
++void ArrivalChecker::set_duration(double duration)
++{
++  receiving_topic_ = true;
++  if (can_change_params_ && duration >= 0)
++  {
++    duration_ = duration;
++  } else {
++    duration_ = default_duration_;
++  }
++}
++
++void ArrivalChecker::publish_debug_info()
++{
++  pub_unmet_goal_reason_->publish(msg_unmet_goal_reason_);
++  pub_goal_distance_->publish(msg_goal_distance_);
++  pub_arrival_distance_->publish(msg_arrival_distance_);
++}
++
++bool ArrivalChecker::is_arrived(const PoseStamped & pose)
+ {
++  bool has_reached_goal_ = true;
++  msg_unmet_goal_reason_.data = "unmet_goal_reason: ";
+   if (!goal_with_uuid_) {
++    msg_unmet_goal_reason_.data += "not_goal_with_uuid, (and more)";
+     return false;
+   }
+   const auto goal = goal_with_uuid_.value();
+ 
+   // Check frame id
+   if (goal.header.frame_id != pose.header.frame_id) {
+-    return false;
++    has_reached_goal_ = false;
++    msg_unmet_goal_reason_.data += "frame_id, ";
++    // return false;
+   }
+ 
+   // Check distance.
++  msg_goal_distance_.data = tier4_autoware_utils::calcDistance2d(pose.pose, goal.pose);
++  msg_arrival_distance_.data = distance_;
+   if (distance_ < tier4_autoware_utils::calcDistance2d(pose.pose, goal.pose)) {
+-    return false;
++    has_reached_goal_ = false;
++    msg_unmet_goal_reason_.data += "distance, ";
++    // return false;
+   }
+ 
+   // Check angle.
+@@ -78,11 +172,23 @@ bool ArrivalChecker::is_arrived(const PoseStamped & pose) const
+   const double yaw_goal = tf2::getYaw(goal.pose.orientation);
+   const double yaw_diff = tier4_autoware_utils::normalizeRadian(yaw_pose - yaw_goal);
+   if (angle_ < std::fabs(yaw_diff)) {
+-    return false;
++    has_reached_goal_ = false;
++    msg_unmet_goal_reason_.data += "angle, ";
++    // return false;
+   }
+ 
+   // Check vehicle stopped.
+-  return vehicle_stop_checker_.isVehicleStopped(duration_);
++  // return vehicle_stop_checker_.isVehicleStopped(duration_);
++  if (!vehicle_stop_checker_.isVehicleStopped(duration_)) {
++    has_reached_goal_ = false;
++    msg_unmet_goal_reason_.data += "vehicle_not_stopped, ";
++  }
++
++  if (has_reached_goal_) {
++    msg_unmet_goal_reason_.data += "None(reached_goal)";
++  }
++
++  return has_reached_goal_;
+ }
+ 
+ }  // namespace mission_planner
+diff --git a/autoware/src/universe/autoware.universe/planning/mission_planner/src/mission_planner/arrival_checker.hpp b/autoware/src/universe/autoware.universe/planning/mission_planner/src/mission_planner/arrival_checker.hpp
+index 0d58b1e0..cacc5186 100644
+--- a/autoware/src/universe/autoware.universe/planning/mission_planner/src/mission_planner/arrival_checker.hpp
++++ b/autoware/src/universe/autoware.universe/planning/mission_planner/src/mission_planner/arrival_checker.hpp
+@@ -22,6 +22,9 @@
+ #include <geometry_msgs/msg/pose.hpp>
+ #include <geometry_msgs/msg/pose_stamped.hpp>
+ 
++#include <std_msgs/msg/float64.hpp>
++#include <std_msgs/msg/string.hpp>
++
+ namespace mission_planner
+ {
+ 
+@@ -30,19 +33,42 @@ class ArrivalChecker
+ public:
+   using PoseWithUuidStamped = autoware_planning_msgs::msg::PoseWithUuidStamped;
+   using PoseStamped = geometry_msgs::msg::PoseStamped;
++  using Float64 = std_msgs::msg::Float64;
++  using String = std_msgs::msg::String;
+   explicit ArrivalChecker(rclcpp::Node * node);
+   void set_goal();
+   void set_goal(const PoseWithUuidStamped & goal);
+-  bool is_arrived(const PoseStamped & pose) const;
++  bool is_arrived(const PoseStamped & pose);
+ 
+ private:
+   double distance_;
++  double default_distance_;
+   double angle_;
++  double default_angle_;
+   double duration_;
++  double default_duration_;
++  double can_change_params_;
+   std::optional<PoseWithUuidStamped> goal_with_uuid_;
++  std_msgs::msg::String msg_unmet_goal_reason_;
++  std_msgs::msg::Float64 msg_goal_distance_;
++  std_msgs::msg::Float64 msg_arrival_distance_;
++  rclcpp::Subscription<Float64>::SharedPtr sub_angle_deg_;
++  rclcpp::Subscription<Float64>::SharedPtr sub_distance_;
++  rclcpp::Subscription<Float64>::SharedPtr sub_duration_;
+   rclcpp::Subscription<PoseWithUuidStamped>::SharedPtr sub_goal_;
++  rclcpp::Publisher<String>::SharedPtr pub_unmet_goal_reason_;
++  rclcpp::Publisher<Float64>::SharedPtr pub_goal_distance_;
++  rclcpp::Publisher<Float64>::SharedPtr pub_arrival_distance_;
+   motion_utils::VehicleStopChecker vehicle_stop_checker_;
++  bool receiving_topic_;
++  void check_receiving_topic();
+   void modify_goal(const PoseWithUuidStamped & modified_goal);
++  void set_distance(double distance);
++  void set_angle(double angle);
++  void set_duration(double duration);
++  void publish_debug_info();
++  rclcpp::TimerBase::SharedPtr tmr_pub_{};
++  rclcpp::TimerBase::SharedPtr tmr_check_receiving_topic_{};
+ };
+ 
+ }  // namespace mission_planner
+diff --git a/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/package.xml b/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/package.xml
+index dcbdbf81..f19ead18 100644
+--- a/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/package.xml
++++ b/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/package.xml
+@@ -17,10 +17,9 @@
+   <author email="makoto.kurihara@tier4.jp">Makoto Kurihara</author>
+ 
+   <buildtool_depend>ament_cmake_auto</buildtool_depend>
++  <buildtool_depend>autoware_cmake</buildtool_depend>
+   <buildtool_depend>eigen3_cmake_module</buildtool_depend>
+ 
+-  <build_depend>autoware_cmake</build_depend>
+-
+   <depend>autoware_auto_planning_msgs</depend>
+   <depend>geometry_msgs</depend>
+   <depend>interpolation</depend>
+diff --git a/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/src/motion_velocity_smoother_node.cpp b/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/src/motion_velocity_smoother_node.cpp
+index 8531fec2..357f5a9a 100644
+--- a/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/src/motion_velocity_smoother_node.cpp
++++ b/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/src/motion_velocity_smoother_node.cpp
+@@ -402,6 +402,16 @@ void MotionVelocitySmootherNode::onCurrentTrajectory(const Trajectory::ConstShar
+     return;
+   }
+ 
++  // calculate trajectory velocity
++  auto input_points = motion_utils::convertToTrajectoryPointArray(*base_traj_raw_ptr_);
++
++  // guard for invalid trajectory
++  input_points = motion_utils::removeOverlapPoints(input_points);
++  if (input_points.size() < 2) {
++    RCLCPP_ERROR(get_logger(), "No enough points in trajectory after overlap points removal");
++    return;
++  }
++
+   // calculate prev closest point
+   if (!prev_output_.empty()) {
+     current_closest_point_from_prev_output_ = calcProjectedTrajectoryPointFromEgo(prev_output_);
+@@ -414,9 +424,6 @@ void MotionVelocitySmootherNode::onCurrentTrajectory(const Trajectory::ConstShar
+   // ignore current external velocity limit next time
+   external_velocity_limit_ptr_ = nullptr;
+ 
+-  // calculate trajectory velocity
+-  auto input_points = motion_utils::convertToTrajectoryPointArray(*base_traj_raw_ptr_);
+-
+   // For negative velocity handling, multiple -1 to velocity if it is for reverse.
+   // NOTE: this process must be in the beginning of the process
+   is_reverse_ = isReverse(input_points);
+@@ -819,19 +826,23 @@ void MotionVelocitySmootherNode::applyExternalVelocityLimit(TrajectoryPoints & t
+   trajectory_utils::applyMaximumVelocityLimit(
+     0, traj.size(), max_velocity_with_deceleration_, traj);
+ 
+-  const size_t closest_idx = findNearestIndexFromEgo(traj);
+-
+-  double dist = 0.0;
+-  for (size_t idx = closest_idx; idx < traj.size() - 1; ++idx) {
+-    dist += tier4_autoware_utils::calcDistance2d(traj.at(idx), traj.at(idx + 1));
+-    if (dist > external_velocity_limit_.dist) {
+-      trajectory_utils::applyMaximumVelocityLimit(
+-        idx + 1, traj.size(), external_velocity_limit_.velocity, traj);
+-      return;
+-    }
++  // insert the point at the distance of external velocity limit
++  const auto & current_pose = current_odometry_ptr_->pose.pose;
++  const size_t closest_seg_idx = motion_utils::findFirstNearestSegmentIndexWithSoftConstraints(
++    traj, current_pose, node_param_.ego_nearest_dist_threshold,
++    node_param_.ego_nearest_yaw_threshold);
++  const auto inserted_index =
++    motion_utils::insertTargetPoint(closest_seg_idx, external_velocity_limit_.dist, traj);
++  if (!inserted_index) {
++    traj.back().longitudinal_velocity_mps = std::min(
++      traj.back().longitudinal_velocity_mps, static_cast<float>(external_velocity_limit_.velocity));
++    return;
+   }
+-  traj.back().longitudinal_velocity_mps = std::min(
+-    traj.back().longitudinal_velocity_mps, static_cast<float>(external_velocity_limit_.velocity));
++
++  // apply external velocity limit from the inserted point
++  trajectory_utils::applyMaximumVelocityLimit(
++    *inserted_index, traj.size(), external_velocity_limit_.velocity, traj);
++
+   RCLCPP_DEBUG(
+     get_logger(), "externalVelocityLimit : limit_vel = %.3f", external_velocity_limit_.velocity);
+ }
+diff --git a/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/src/smoother/jerk_filtered_smoother.cpp b/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/src/smoother/jerk_filtered_smoother.cpp
+index 8a364f87..be5b0bf7 100644
+--- a/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/src/smoother/jerk_filtered_smoother.cpp
++++ b/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/src/smoother/jerk_filtered_smoother.cpp
+@@ -14,9 +14,10 @@
+ 
+ #include "motion_velocity_smoother/smoother/jerk_filtered_smoother.hpp"
+ 
+-#include "eigen3/Eigen/Core"
+ #include "motion_velocity_smoother/trajectory_utils.hpp"
+ 
++#include <Eigen/Core>
++
+ #include <algorithm>
+ #include <chrono>
+ #include <cmath>
+@@ -293,6 +294,17 @@ bool JerkFilteredSmoother::apply(
+   // execute optimization
+   const auto result = qp_solver_.optimize(P, A, q, lower_bound, upper_bound);
+   const std::vector<double> optval = std::get<0>(result);
++  const int status_val = std::get<3>(result);
++  if (status_val != 1) {
++    RCLCPP_WARN(logger_, "optimization failed : %s", qp_solver_.getStatusMessage().c_str());
++    return false;
++  }
++  const auto has_nan =
++    std::any_of(optval.begin(), optval.end(), [](const auto v) { return std::isnan(v); });
++  if (has_nan) {
++    RCLCPP_WARN(logger_, "optimization failed: result contains NaN values");
++    return false;
++  }
+ 
+   const auto tf1 = std::chrono::system_clock::now();
+   const double dt_ms1 =
+diff --git a/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/src/smoother/l2_pseudo_jerk_smoother.cpp b/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/src/smoother/l2_pseudo_jerk_smoother.cpp
+index f80fc023..d46deeee 100644
+--- a/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/src/smoother/l2_pseudo_jerk_smoother.cpp
++++ b/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/src/smoother/l2_pseudo_jerk_smoother.cpp
+@@ -14,9 +14,10 @@
+ 
+ #include "motion_velocity_smoother/smoother/l2_pseudo_jerk_smoother.hpp"
+ 
+-#include "eigen3/Eigen/Core"
+ #include "motion_velocity_smoother/trajectory_utils.hpp"
+ 
++#include <Eigen/Core>
++
+ #include <algorithm>
+ #include <chrono>
+ #include <limits>
+@@ -189,6 +190,17 @@ bool L2PseudoJerkSmoother::apply(
+   // [b0, b1, ..., bN, |  a0, a1, ..., aN, |
+   //  delta0, delta1, ..., deltaN, | sigma0, sigma1, ..., sigmaN]
+   const std::vector<double> optval = std::get<0>(result);
++  const int status_val = std::get<3>(result);
++  if (status_val != 1) {
++    RCLCPP_WARN(logger_, "optimization failed : %s", qp_solver_.getStatusMessage().c_str());
++    return false;
++  }
++  const auto has_nan =
++    std::any_of(optval.begin(), optval.end(), [](const auto v) { return std::isnan(v); });
++  if (has_nan) {
++    RCLCPP_WARN(logger_, "optimization failed: result contains NaN values");
++    return false;
++  }
+ 
+   for (unsigned int i = 0; i < N; ++i) {
+     double v = optval.at(i);
+diff --git a/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/src/smoother/linf_pseudo_jerk_smoother.cpp b/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/src/smoother/linf_pseudo_jerk_smoother.cpp
+index 7c3fe6e0..e8900b19 100644
+--- a/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/src/smoother/linf_pseudo_jerk_smoother.cpp
++++ b/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/src/smoother/linf_pseudo_jerk_smoother.cpp
+@@ -14,9 +14,10 @@
+ 
+ #include "motion_velocity_smoother/smoother/linf_pseudo_jerk_smoother.hpp"
+ 
+-#include "eigen3/Eigen/Core"
+ #include "motion_velocity_smoother/trajectory_utils.hpp"
+ 
++#include <Eigen/Core>
++
+ #include <algorithm>
+ #include <chrono>
+ #include <limits>
+@@ -204,6 +205,17 @@ bool LinfPseudoJerkSmoother::apply(
+   // [b0, b1, ..., bN, |  a0, a1, ..., aN, |
+   //  delta0, delta1, ..., deltaN, | sigma0, sigma1, ..., sigmaN]
+   const std::vector<double> optval = std::get<0>(result);
++  const int status_val = std::get<3>(result);
++  if (status_val != 1) {
++    RCLCPP_WARN(logger_, "optimization failed : %s", qp_solver_.getStatusMessage().c_str());
++    return false;
++  }
++  const auto has_nan =
++    std::any_of(optval.begin(), optval.end(), [](const auto v) { return std::isnan(v); });
++  if (has_nan) {
++    RCLCPP_WARN(logger_, "optimization failed: result contains NaN values");
++    return false;
++  }
+ 
+   /* get velocity & acceleration */
+   for (unsigned int i = 0; i < N; ++i) {
+diff --git a/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/test/test_motion_velocity_smoother_node_interface.cpp b/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/test/test_motion_velocity_smoother_node_interface.cpp
+index c5a12075..d9577a5c 100644
+--- a/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/test/test_motion_velocity_smoother_node_interface.cpp
++++ b/autoware/src/universe/autoware.universe/planning/motion_velocity_smoother/test/test_motion_velocity_smoother_node_interface.cpp
+@@ -1,4 +1,4 @@
+-// Copyright 2023 Tier IV, Inc.
++// Copyright 2023 TIER IV, Inc.
+ //
+ // Licensed under the Apache License, Version 2.0 (the "License");
+ // you may not use this file except in compliance with the License.
+@@ -25,20 +25,20 @@ TEST(PlanningModuleInterfaceTest, testPlanningInterfaceWithVariousTrajectoryInpu
+ {
+   rclcpp::init(0, nullptr);
+ 
+-  auto test_manager = std::make_shared<planning_test_utils::PlanningIntefaceTestManager>();
++  auto test_manager = std::make_shared<planning_test_utils::PlanningInterfaceTestManager>();
+ 
+   auto node_options = rclcpp::NodeOptions{};
+-
+-  test_manager->declareVehicleInfoParams(node_options);
+-  test_manager->declareNearestSearchDistanceParams(node_options);
+   node_options.append_parameter_override("algorithm_type", "JerkFiltered");
+   node_options.append_parameter_override("publish_debug_trajs", false);
+-
++  const auto planning_test_utils_dir =
++    ament_index_cpp::get_package_share_directory("planning_test_utils");
+   const auto motion_velocity_smoother_dir =
+     ament_index_cpp::get_package_share_directory("motion_velocity_smoother");
+-
+   node_options.arguments(
+-    {"--ros-args", "--params-file",
++    {"--ros-args", "--params-file", planning_test_utils_dir + "/config/test_common.param.yaml",
++     "--params-file", planning_test_utils_dir + "/config/test_nearest_search.param.yaml",
++     "--params-file", planning_test_utils_dir + "/config/test_vehicle_info.param.yaml",
++     "--params-file",
+      motion_velocity_smoother_dir + "/config/default_motion_velocity_smoother.param.yaml",
+      "--params-file", motion_velocity_smoother_dir + "/config/default_common.param.yaml",
+      "--params-file", motion_velocity_smoother_dir + "/config/JerkFiltered.param.yaml"});
+@@ -62,5 +62,5 @@ TEST(PlanningModuleInterfaceTest, testPlanningInterfaceWithVariousTrajectoryInpu
+   EXPECT_GE(test_manager->getReceivedTopicNum(), 1);
+ 
+   // test for trajectory with empty/one point/overlapping point
+-  test_manager->testWithAbnormalTrajectory(test_target_node);
++  ASSERT_NO_THROW(test_manager->testWithAbnormalTrajectory(test_target_node));
+ }
+diff --git a/autoware/src/universe/autoware.universe/planning/obstacle_avoidance_planner/config/obstacle_avoidance_planner.param.yaml b/autoware/src/universe/autoware.universe/planning/obstacle_avoidance_planner/config/obstacle_avoidance_planner.param.yaml
+index 5586de98..9dda463a 100644
+--- a/autoware/src/universe/autoware.universe/planning/obstacle_avoidance_planner/config/obstacle_avoidance_planner.param.yaml
++++ b/autoware/src/universe/autoware.universe/planning/obstacle_avoidance_planner/config/obstacle_avoidance_planner.param.yaml
+@@ -4,7 +4,7 @@
+       enable_smoothing: true                                       # enable path smoothing by elastic band
+       enable_skip_optimization: false                              # skip elastic band and model predictive trajectory
+       enable_reset_prev_optimization: false                        # If true, optimization has no fix constraint to the previous result.
+-      enable_outside_drivable_area_stop: true                      # stop if the ego's trajectory footprint is outside the drivable area
++      enable_outside_drivable_area_stop: false                      # stop if the ego's trajectory footprint is outside the drivable area
+       use_footprint_polygon_for_outside_drivable_area_check: false # If false, only the footprint's corner points are considered.
+ 
+       debug:
+diff --git a/autoware/src/universe/autoware.universe/planning/obstacle_avoidance_planner/src/eb_path_smoother.cpp b/autoware/src/universe/autoware.universe/planning/obstacle_avoidance_planner/src/eb_path_smoother.cpp
+index a988f78c..31af863e 100644
+--- a/autoware/src/universe/autoware.universe/planning/obstacle_avoidance_planner/src/eb_path_smoother.cpp
++++ b/autoware/src/universe/autoware.universe/planning/obstacle_avoidance_planner/src/eb_path_smoother.cpp
+@@ -380,6 +380,12 @@ std::optional<std::vector<double>> EBPathSmoother::optimizeTrajectory()
+     osqp_solver_ptr_->logUnsolvedStatus("[EB]");
+     return std::nullopt;
+   }
++  const auto has_nan = std::any_of(
++    optimized_points.begin(), optimized_points.end(), [](const auto v) { return std::isnan(v); });
++  if (has_nan) {
++    RCLCPP_WARN(logger_, "optimization failed: result contains NaN values");
++    return std::nullopt;
++  }
+ 
+   time_keeper_ptr_->toc(__func__, "        ");
+   return optimized_points;
+diff --git a/autoware/src/universe/autoware.universe/planning/obstacle_avoidance_planner/src/mpt_optimizer.cpp b/autoware/src/universe/autoware.universe/planning/obstacle_avoidance_planner/src/mpt_optimizer.cpp
+index 565ef893..70c6051d 100644
+--- a/autoware/src/universe/autoware.universe/planning/obstacle_avoidance_planner/src/mpt_optimizer.cpp
++++ b/autoware/src/universe/autoware.universe/planning/obstacle_avoidance_planner/src/mpt_optimizer.cpp
+@@ -1345,6 +1345,13 @@ std::optional<Eigen::VectorXd> MPTOptimizer::calcOptimizedSteerAngles(
+   // get optimization result
+   auto optimization_result =
+     std::get<0>(result);  // NOTE: const cannot be added due to the next operation.
++  const auto has_nan = std::any_of(
++    optimization_result.begin(), optimization_result.end(),
++    [](const auto v) { return std::isnan(v); });
++  if (has_nan) {
++    RCLCPP_WARN(logger_, "optimization failed: result contains NaN values");
++    return std::nullopt;
++  }
+   const Eigen::VectorXd optimized_steer_angles =
+     Eigen::Map<Eigen::VectorXd>(&optimization_result[0], D_un);
+ 
+diff --git a/autoware/src/universe/autoware.universe/planning/obstacle_cruise_planner/src/optimization_based_planner/velocity_optimizer.cpp b/autoware/src/universe/autoware.universe/planning/obstacle_cruise_planner/src/optimization_based_planner/velocity_optimizer.cpp
+index 33a742fe..21a8f582 100644
+--- a/autoware/src/universe/autoware.universe/planning/obstacle_cruise_planner/src/optimization_based_planner/velocity_optimizer.cpp
++++ b/autoware/src/universe/autoware.universe/planning/obstacle_cruise_planner/src/optimization_based_planner/velocity_optimizer.cpp
+@@ -248,29 +248,35 @@ VelocityOptimizer::OptimizationResult VelocityOptimizer::optimize(const Optimiza
+   const std::vector<double> optval = std::get<0>(result);
+ 
+   const int status_val = std::get<3>(result);
+-  if (status_val != 1) {
++  if (status_val != 1)
+     std::cerr << "optimization failed : " << qp_solver_.getStatusMessage().c_str() << std::endl;
+-  }
+ 
+-  std::vector<double> opt_time = time_vec;
+-  std::vector<double> opt_pos(N);
+-  std::vector<double> opt_vel(N);
+-  std::vector<double> opt_acc(N);
+-  std::vector<double> opt_jerk(N);
+-  for (size_t i = 0; i < N; ++i) {
+-    opt_pos.at(i) = optval.at(IDX_S0 + i);
+-    opt_vel.at(i) = std::max(optval.at(IDX_V0 + i), 0.0);
+-    opt_acc.at(i) = optval.at(IDX_A0 + i);
+-    opt_jerk.at(i) = optval.at(IDX_J0 + i);
+-  }
+-  opt_vel.back() = 0.0;
++  const auto has_nan =
++    std::any_of(optval.begin(), optval.end(), [](const auto v) { return std::isnan(v); });
++  if (has_nan) std::cerr << "optimization failed : result contains NaN values\n";
+ 
+   OptimizationResult optimized_result;
+-  optimized_result.t = opt_time;
+-  optimized_result.s = opt_pos;
+-  optimized_result.v = opt_vel;
+-  optimized_result.a = opt_acc;
+-  optimized_result.j = opt_jerk;
++  const auto is_optimization_failed = status_val != 1 || has_nan;
++  if (!is_optimization_failed) {
++    std::vector<double> opt_time = time_vec;
++    std::vector<double> opt_pos(N);
++    std::vector<double> opt_vel(N);
++    std::vector<double> opt_acc(N);
++    std::vector<double> opt_jerk(N);
++    for (size_t i = 0; i < N; ++i) {
++      opt_pos.at(i) = optval.at(IDX_S0 + i);
++      opt_vel.at(i) = std::max(optval.at(IDX_V0 + i), 0.0);
++      opt_acc.at(i) = optval.at(IDX_A0 + i);
++      opt_jerk.at(i) = optval.at(IDX_J0 + i);
++    }
++    opt_vel.back() = 0.0;
++
++    optimized_result.t = opt_time;
++    optimized_result.s = opt_pos;
++    optimized_result.v = opt_vel;
++    optimized_result.a = opt_acc;
++    optimized_result.j = opt_jerk;
++  }
+ 
+   return optimized_result;
+ }
+diff --git a/autoware/src/universe/autoware.universe/planning/route_handler/include/route_handler/route_handler.hpp b/autoware/src/universe/autoware.universe/planning/route_handler/include/route_handler/route_handler.hpp
+index d72a11aa..7d22e294 100644
+--- a/autoware/src/universe/autoware.universe/planning/route_handler/include/route_handler/route_handler.hpp
++++ b/autoware/src/universe/autoware.universe/planning/route_handler/include/route_handler/route_handler.hpp
+@@ -58,6 +58,24 @@ enum class Direction { NONE, LEFT, RIGHT };
+ enum class PullOverDirection { NONE, LEFT, RIGHT };
+ enum class PullOutDirection { NONE, LEFT, RIGHT };
+ 
++struct id_buf {
++  int n, buf[ 20 ];
++
++  id_buf() { n = 0; }
++  bool is_full() {  return n >= int( sizeof( buf ) / sizeof( *buf ) ); }
++  void add( int id ) { if ( ! is_full() ) buf[ n++ ] = id; }
++
++  bool is_in( int id ) {
++    int i;
++    for ( i=0; i < n; i++ )
++      if ( buf[ i ] == id )
++        return true;
++
++    return false;
++  }
++
++};
++
+ class RouteHandler
+ {
+ public:
+@@ -87,7 +105,7 @@ public:
+   // for routing
+   bool planPathLaneletsBetweenCheckpoints(
+     const Pose & start_checkpoint, const Pose & goal_checkpoint,
+-    lanelet::ConstLanelets * path_lanelets) const;
++    lanelet::ConstLanelets * path_lanelets, id_buf *start_ng_id=nullptr ) const;
+   std::vector<LaneletSegment> createMapSegments(const lanelet::ConstLanelets & path_lanelets) const;
+   static bool isRouteLooped(const RouteSections & route_sections);
+ 
+diff --git a/autoware/src/universe/autoware.universe/planning/route_handler/src/route_handler.cpp b/autoware/src/universe/autoware.universe/planning/route_handler/src/route_handler.cpp
+index a309b539..ec61b8c6 100644
+--- a/autoware/src/universe/autoware.universe/planning/route_handler/src/route_handler.cpp
++++ b/autoware/src/universe/autoware.universe/planning/route_handler/src/route_handler.cpp
+@@ -1761,10 +1761,17 @@ lanelet::ConstLanelets RouteHandler::getNextLaneSequence(
+ 
+ bool RouteHandler::planPathLaneletsBetweenCheckpoints(
+   const Pose & start_checkpoint, const Pose & goal_checkpoint,
+-  lanelet::ConstLanelets * path_lanelets) const
++  lanelet::ConstLanelets * path_lanelets, id_buf *start_ng_id ) const
+ {
++  lanelet::ConstLanelets tmp;
++  for (const auto & llt : road_lanelets_ ) {
++    if ( start_ng_id != nullptr && start_ng_id->is_in( llt.id() ) )
++      continue;
++    tmp.push_back( llt );
++  }
++
+   lanelet::Lanelet start_lanelet;
+-  if (!lanelet::utils::query::getClosestLanelet(road_lanelets_, start_checkpoint, &start_lanelet)) {
++  if (!lanelet::utils::query::getClosestLanelet(tmp, start_checkpoint, &start_lanelet)) {
+     return false;
+   }
+   lanelet::Lanelet goal_lanelet;
+@@ -1783,6 +1790,10 @@ bool RouteHandler::planPathLaneletsBetweenCheckpoints(
+                  << "goal checkpoint: " << toString(goal_checkpoint) << std::endl
+                  << "start lane id: " << start_lanelet.id() << std::endl
+                  << "goal lane id: " << goal_lanelet.id() << std::endl);
++
++    if ( start_ng_id != nullptr )
++      start_ng_id->add( start_lanelet.id() );
++
+     return false;
+   }
+ 
+diff --git a/autoware/src/universe/autoware.universe/sensing/pointcloud_preprocessor/src/distortion_corrector/distortion_corrector.cpp b/autoware/src/universe/autoware.universe/sensing/pointcloud_preprocessor/src/distortion_corrector/distortion_corrector.cpp
+index 36a9b0c6..f4f9f6ef 100644
+--- a/autoware/src/universe/autoware.universe/sensing/pointcloud_preprocessor/src/distortion_corrector/distortion_corrector.cpp
++++ b/autoware/src/universe/autoware.universe/sensing/pointcloud_preprocessor/src/distortion_corrector/distortion_corrector.cpp
+@@ -222,7 +222,10 @@ bool DistortionCorrectorComponent::undistortPointCloud(
+ 
+   // For performance, do not instantiate `rclcpp::Time` inside of the for-loop
+   double twist_stamp = rclcpp::Time(twist_it->header.stamp).seconds();
+-  double imu_stamp = rclcpp::Time(imu_it->header.stamp).seconds();
++  double imu_stamp = 0.0;
++  if (use_imu_ && !angular_velocity_queue_.empty()) {
++    imu_stamp = rclcpp::Time(imu_it->header.stamp).seconds();
++  }
+ 
+   // For performance, instantiate outside of the for-loop
+   tf2::Quaternion baselink_quat{};
+diff --git a/autoware/src/universe/autoware.universe/system/component_state_monitor/src/main.cpp b/autoware/src/universe/autoware.universe/system/component_state_monitor/src/main.cpp
+index 2a05ef1a..b7cc7303 100644
+--- a/autoware/src/universe/autoware.universe/system/component_state_monitor/src/main.cpp
++++ b/autoware/src/universe/autoware.universe/system/component_state_monitor/src/main.cpp
+@@ -57,6 +57,11 @@ const std::unordered_map<Module, std::string> module_names = {
+ 
+ StateMonitor::StateMonitor(const rclcpp::NodeOptions & options) : Node("state", options)
+ {
++  iino_sim_ = false;
++  char *s = getenv( "IINO_SIM" );
++  if ( s && *s && *s != '0' )
++    iino_sim_ = true;
++
+   for (const auto & type : types) {
+     for (const auto & module : modules) {
+       const auto name = type_names.at(type) + "." + module_names.at(module);
+@@ -112,7 +117,15 @@ void StateMonitor::on_timer()
+     const auto launch_state = state(topics_[StateType::kLaunch][module]);
+     const auto auto_state = state(topics_[StateType::kAutonomous][module]);
+     update_state(StateType::kLaunch, module, launch_state);
+-    update_state(StateType::kAutonomous, module, launch_state & auto_state);
++
++    bool auto_v = ( launch_state & auto_state );
++    if ( iino_sim_ &&
++         ( module == Module::kLocalization ||
++           module == Module::kPerception ) &&
++         ! auto_v )
++      auto_v = true;
++
++    update_state(StateType::kAutonomous, module, auto_v);
+   }
+ }
+ 
+diff --git a/autoware/src/universe/autoware.universe/system/component_state_monitor/src/main.hpp b/autoware/src/universe/autoware.universe/system/component_state_monitor/src/main.hpp
+index 73f57f56..0ba63073 100644
+--- a/autoware/src/universe/autoware.universe/system/component_state_monitor/src/main.hpp
++++ b/autoware/src/universe/autoware.universe/system/component_state_monitor/src/main.hpp
+@@ -71,6 +71,8 @@ private:
+   void update_state(const StateType & type, const Module & module, bool state);
+   void on_timer();
+   void on_diag(const DiagnosticArray::ConstSharedPtr msg);
++
++  bool iino_sim_;
+ };
+ 
+ }  // namespace component_state_monitor
+diff --git a/autoware/src/universe/autoware.universe/system/default_ad_api_helpers/ad_api_adaptors/config/initial_pose.param.yaml b/autoware/src/universe/autoware.universe/system/default_ad_api_helpers/ad_api_adaptors/config/initial_pose.param.yaml
+index 46748a02..96b14f09 100644
+--- a/autoware/src/universe/autoware.universe/system/default_ad_api_helpers/ad_api_adaptors/config/initial_pose.param.yaml
++++ b/autoware/src/universe/autoware.universe/system/default_ad_api_helpers/ad_api_adaptors/config/initial_pose.param.yaml
+@@ -4,10 +4,10 @@
+     # from initialpose (Rviz's 2DPoseEstimate)
+     initial_pose_particle_covariance:
+       [
+-        4.0, 0.0, 0.0,  0.0,  0.0,  0.0,
+-        0.0, 4.0, 0.0,  0.0,  0.0,  0.0,
+-        0.0, 0.0, 0.01, 0.0,  0.0,  0.0,
+-        0.0, 0.0, 0.0,  0.01, 0.0,  0.0,
+-        0.0, 0.0, 0.0,  0.0,  0.01, 0.0,
+-        0.0, 0.0, 0.0,  0.0,  0.0,  1.0,
++        0.2, 0.0, 0.0,  0.0,  0.0,  0.0,
++        0.0, 0.2, 0.0,  0.0,  0.0,  0.0,
++        0.0, 0.0, 0.1,  0.0,  0.0,  0.0,
++        0.0, 0.0, 0.0,  0.0,  0.0,  0.0,
++        0.0, 0.0, 0.0,  0.0,  0.0,  0.0,
++        0.0, 0.0, 0.0,  0.0,  0.0,  0.1,
+       ]
+diff --git a/autoware/src/universe/autoware.universe/system/system_error_monitor/config/diagnostic_aggregator/control.param.yaml b/autoware/src/universe/autoware.universe/system/system_error_monitor/config/diagnostic_aggregator/control.param.yaml
+index 86d84bba..eccfdc42 100644
+--- a/autoware/src/universe/autoware.universe/system/system_error_monitor/config/diagnostic_aggregator/control.param.yaml
++++ b/autoware/src/universe/autoware.universe/system/system_error_monitor/config/diagnostic_aggregator/control.param.yaml
+@@ -4,19 +4,19 @@
+       type: diagnostic_aggregator/AnalyzerGroup
+       path: control
+       analyzers:
+-        autonomous_emergency_braking:
+-          type: diagnostic_aggregator/AnalyzerGroup
+-          path: autonomous_emergency_braking
+-          analyzers:
+-            performance_monitoring:
+-              type: diagnostic_aggregator/AnalyzerGroup
+-              path: performance_monitoring
+-              analyzers:
+-                emergency_stop:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: emergency_stop
+-                  contains: [": aeb_emergency_stop"]
+-                  timeout: 1.0
++        # autonomous_emergency_braking:
++        #   type: diagnostic_aggregator/AnalyzerGroup
++        #   path: autonomous_emergency_braking
++        #   analyzers:
++        #     performance_monitoring:
++        #       type: diagnostic_aggregator/AnalyzerGroup
++        #       path: performance_monitoring
++        #       analyzers:
++        #         emergency_stop:
++        #           type: diagnostic_aggregator/GenericAnalyzer
++        #           path: emergency_stop
++        #           contains: [": aeb_emergency_stop"]
++        #           timeout: 1.0
+ 
+         control_command_gate:
+           type: diagnostic_aggregator/AnalyzerGroup
+@@ -68,48 +68,48 @@
+                   contains: [": control_state"]
+                   timeout: 1.0
+ 
+-        external_control:
+-          type: diagnostic_aggregator/AnalyzerGroup
+-          path: external_control
+-          analyzers:
+-            external_command_selector:
+-              type: diagnostic_aggregator/AnalyzerGroup
+-              path: external_command_selector
+-              analyzers:
+-                node_alive_monitoring:
+-                  type: diagnostic_aggregator/AnalyzerGroup
+-                  path: node_alive_monitoring
+-                  analyzers:
+-                    heartbeat:
+-                      type: diagnostic_aggregator/GenericAnalyzer
+-                      path: heartbeat
+-                      contains: ["external_cmd_selector: heartbeat"]
+-                      timeout: 1.0
++        # external_control:
++        #   type: diagnostic_aggregator/AnalyzerGroup
++        #   path: external_control
++        #   analyzers:
++        #     external_command_selector:
++        #       type: diagnostic_aggregator/AnalyzerGroup
++        #       path: external_command_selector
++        #       analyzers:
++        #         node_alive_monitoring:
++        #           type: diagnostic_aggregator/AnalyzerGroup
++        #           path: node_alive_monitoring
++        #           analyzers:
++        #             heartbeat:
++        #               type: diagnostic_aggregator/GenericAnalyzer
++        #               path: heartbeat
++        #               contains: ["external_cmd_selector: heartbeat"]
++        #               timeout: 1.0
+ 
+-            local_external_control:
+-              type: diagnostic_aggregator/AnalyzerGroup
+-              path: local_external_control
+-              analyzers:
+-                device_connection:
+-                  type: diagnostic_aggregator/AnalyzerGroup
+-                  path: device_connection
+-                  analyzers:
+-                    joy_controller_connection:
+-                      type: diagnostic_aggregator/GenericAnalyzer
+-                      path: joy_controller_connection
+-                      contains: [": joy_controller_connection"]
+-                      timeout: 1.0
++            # local_external_control:
++            #   type: diagnostic_aggregator/AnalyzerGroup
++            #   path: local_external_control
++            #   analyzers:
++            #     device_connection:
++            #       type: diagnostic_aggregator/AnalyzerGroup
++            #       path: device_connection
++            #       analyzers:
++            #         joy_controller_connection:
++            #           type: diagnostic_aggregator/GenericAnalyzer
++            #           path: joy_controller_connection
++            #           contains: [": joy_controller_connection"]
++            #           timeout: 1.0
+ 
+-            remote_external_control:
+-              type: diagnostic_aggregator/AnalyzerGroup
+-              path: remote_external_control
+-              analyzers:
+-                network_connection:
+-                  type: diagnostic_aggregator/AnalyzerGroup
+-                  path: network_connection
+-                  analyzers:
+-                    remote_control_topic_status:
+-                      type: diagnostic_aggregator/GenericAnalyzer
+-                      path: remote_control_topic_status
+-                      contains: [": remote_control_topic_status"]
+-                      timeout: 1.0
++            # remote_external_control:
++            #   type: diagnostic_aggregator/AnalyzerGroup
++            #   path: remote_external_control
++            #   analyzers:
++            #     network_connection:
++            #       type: diagnostic_aggregator/AnalyzerGroup
++            #       path: network_connection
++            #       analyzers:
++            #         remote_control_topic_status:
++            #           type: diagnostic_aggregator/GenericAnalyzer
++            #           path: remote_control_topic_status
++            #           contains: [": remote_control_topic_status"]
++            #           timeout: 1.0
+diff --git a/autoware/src/universe/autoware.universe/system/system_error_monitor/config/diagnostic_aggregator/system.param.yaml b/autoware/src/universe/autoware.universe/system/system_error_monitor/config/diagnostic_aggregator/system.param.yaml
+index 87cf767a..12482abe 100644
+--- a/autoware/src/universe/autoware.universe/system/system_error_monitor/config/diagnostic_aggregator/system.param.yaml
++++ b/autoware/src/universe/autoware.universe/system/system_error_monitor/config/diagnostic_aggregator/system.param.yaml
+@@ -20,224 +20,224 @@
+           contains: [": emergency_stop_operation"]
+           timeout: 1.0
+ 
+-        service_log_checker:
+-          type: diagnostic_aggregator/GenericAnalyzer
+-          path: service_log_checker
+-          contains: ["service_log_checker"]
+-          timeout: 5.0
+-
+-        resource_monitoring:
+-          type: diagnostic_aggregator/AnalyzerGroup
+-          path: resource_monitoring
+-          analyzers:
+-            clock:
+-              type: diagnostic_aggregator/AnalyzerGroup
+-              path: clock
+-              analyzers:
+-                clock_offset:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: clock_offset
+-                  contains: [": NTP Offset"]
+-                  timeout: 10.0
+-
+-            cpu:
+-              type: diagnostic_aggregator/AnalyzerGroup
+-              path: cpu
+-              analyzers:
+-                temperature:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: temperature
+-                  contains: [": CPU Temperature"]
+-                  timeout: 3.0
+-
+-                usage:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: usage
+-                  contains: [": CPU Usage"]
+-                  timeout: 3.0
+-
+-                thermal_throttling:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: thermal_throttling
+-                  contains: [": CPU Thermal Throttling"]
+-                  timeout: 3.0
+-
+-                frequency:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: frequency
+-                  contains: [": CPU Frequency"]
+-                  timeout: 3.0
+-
+-                load_average:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: load_average
+-                  contains: [": CPU Load Average"]
+-                  timeout: 3.0
+-
+-            gpu:
+-              type: diagnostic_aggregator/AnalyzerGroup
+-              path: gpu
+-              analyzers:
+-                temperature:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: temperature
+-                  contains: [": GPU Temperature"]
+-                  timeout: 3.0
+-
+-                usage:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: gpu_usage
+-                  contains: [": GPU Usage"]
+-                  timeout: 3.0
+-
+-                memory_usage:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: memory_usage
+-                  contains: [": GPU Memory Usage"]
+-                  timeout: 3.0
+-
+-                thermal_throttling:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: thermal_throttling
+-                  contains: [": GPU Thermal Throttling"]
+-                  timeout: 3.0
+-
+-                frequency:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: frequency
+-                  contains: [": GPU Frequency"]
+-                  timeout: 3.0
+-
+-            memory:
+-              type: diagnostic_aggregator/AnalyzerGroup
+-              path: memory
+-              analyzers:
+-                usage:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: usage
+-                  contains: [": Memory Usage"]
+-                  timeout: 3.0
+-
+-            network:
+-              type: diagnostic_aggregator/AnalyzerGroup
+-              path: network
+-              analyzers:
+-                network_usage:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: network_usage
+-                  contains: [": Network Usage"]
+-                  timeout: 3.0
+-
+-                network_traffic:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: network_traffic
+-                  contains: [": Network Traffic"]
+-                  timeout: 3.0
+-
+-                network_crc_error:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: network_crc_error
+-                  contains: [": Network CRC Error"]
+-                  timeout: 3.0
+-
+-                ip_packet_reassembles_failed:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: ip_packet_reassembles_failed
+-                  contains: [": IP Packet Reassembles Failed"]
+-                  timeout: 3.0
+-
+-            storage:
+-              type: diagnostic_aggregator/AnalyzerGroup
+-              path: storage
+-              analyzers:
+-                temperature:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: temperature
+-                  contains: [": HDD Temperature"]
+-                  timeout: 3.0
+-
+-                recovered_error:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: recovered_error
+-                  contains: [": HDD RecoveredError"]
+-                  timeout: 3.0
+-
+-                read_data_rate:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: read_data_rate
+-                  contains: [": HDD ReadDataRate"]
+-                  timeout: 3.0
+-
+-                write_data_rate:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: write_data_rate
+-                  contains: [": HDD WriteDataRate"]
+-                  timeout: 3.0
+-
+-                read_iops:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: read_iops
+-                  contains: [": HDD ReadIOPS"]
+-                  timeout: 3.0
+-
+-                write_iops:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: write_iops
+-                  contains: [": HDD WriteIOPS"]
+-                  timeout: 3.0
+-
+-                usage:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: usage
+-                  contains: [": HDD Usage"]
+-                  timeout: 3.0
+-
+-                power_on_hours:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: power_on_hours
+-                  contains: [": HDD PowerOnHours"]
+-                  timeout: 3.0
+-
+-                total_data_written:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: total_data_written
+-                  contains: [": HDD TotalDataWritten"]
+-                  timeout: 3.0
+-
+-                connection:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: connection
+-                  contains: [": HDD Connection"]
+-                  timeout: 3.0
+-
+-            process:
+-              type: diagnostic_aggregator/AnalyzerGroup
+-              path: process
+-              analyzers:
+-                high_load:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: high_load
+-                  contains: [": High-load"]
+-                  timeout: 3.0
+-
+-                high_mem:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: high_mem
+-                  contains: [": High-mem"]
+-                  timeout: 3.0
+-
+-                tasks_summary:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: tasks_summary
+-                  contains: [": Tasks Summary"]
+-                  timeout: 3.0
+-
+-            hardware:
+-              type: diagnostic_aggregator/AnalyzerGroup
+-              path: voltage
+-              analyzers:
+-                cmos_battery:
+-                  type: diagnostic_aggregator/GenericAnalyzer
+-                  path: cmos_battery
+-                  contains: [": CMOS Battery Status"]
+-                  timeout: 3.0
++        # service_log_checker:
++        #   type: diagnostic_aggregator/GenericAnalyzer
++        #   path: service_log_checker
++        #   contains: ["service_log_checker"]
++        #   timeout: 5.0
++
++        # resource_monitoring:
++        #   type: diagnostic_aggregator/AnalyzerGroup
++        #   path: resource_monitoring
++        #   analyzers:
++        #     clock:
++        #       type: diagnostic_aggregator/AnalyzerGroup
++        #       path: clock
++        #       analyzers:
++        #         clock_offset:
++        #           type: diagnostic_aggregator/GenericAnalyzer
++        #           path: clock_offset
++        #           contains: [": NTP Offset"]
++        #           timeout: 10.0
++
++            # cpu:
++            #   type: diagnostic_aggregator/AnalyzerGroup
++            #   path: cpu
++            #   analyzers:
++            #     temperature:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: temperature
++            #       contains: [": CPU Temperature"]
++            #       timeout: 3.0
++
++            #     usage:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: usage
++            #       contains: [": CPU Usage"]
++            #       timeout: 3.0
++
++            #     thermal_throttling:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: thermal_throttling
++            #       contains: [": CPU Thermal Throttling"]
++            #       timeout: 3.0
++
++            #     frequency:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: frequency
++            #       contains: [": CPU Frequency"]
++            #       timeout: 3.0
++
++            #     load_average:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: load_average
++            #       contains: [": CPU Load Average"]
++            #       timeout: 3.0
++
++            # gpu:
++            #   type: diagnostic_aggregator/AnalyzerGroup
++            #   path: gpu
++            #   analyzers:
++            #     temperature:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: temperature
++            #       contains: [": GPU Temperature"]
++            #       timeout: 3.0
++
++            #     usage:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: gpu_usage
++            #       contains: [": GPU Usage"]
++            #       timeout: 3.0
++
++            #     memory_usage:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: memory_usage
++            #       contains: [": GPU Memory Usage"]
++            #       timeout: 3.0
++
++            #     thermal_throttling:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: thermal_throttling
++            #       contains: [": GPU Thermal Throttling"]
++            #       timeout: 3.0
++
++            #     frequency:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: frequency
++            #       contains: [": GPU Frequency"]
++            #       timeout: 3.0
++
++            # memory:
++            #   type: diagnostic_aggregator/AnalyzerGroup
++            #   path: memory
++            #   analyzers:
++            #     usage:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: usage
++            #       contains: [": Memory Usage"]
++            #       timeout: 3.0
++
++            # network:
++            #   type: diagnostic_aggregator/AnalyzerGroup
++            #   path: network
++            #   analyzers:
++            #     network_usage:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: network_usage
++            #       contains: [": Network Usage"]
++            #       timeout: 3.0
++
++            #     network_traffic:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: network_traffic
++            #       contains: [": Network Traffic"]
++            #       timeout: 3.0
++
++            #     network_crc_error:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: network_crc_error
++            #       contains: [": Network CRC Error"]
++            #       timeout: 3.0
++
++            #     ip_packet_reassembles_failed:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: ip_packet_reassembles_failed
++            #       contains: [": IP Packet Reassembles Failed"]
++            #       timeout: 3.0
++
++            # storage:
++            #   type: diagnostic_aggregator/AnalyzerGroup
++            #   path: storage
++            #   analyzers:
++            #     temperature:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: temperature
++            #       contains: [": HDD Temperature"]
++            #       timeout: 3.0
++
++            #     recovered_error:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: recovered_error
++            #       contains: [": HDD RecoveredError"]
++            #       timeout: 3.0
++
++            #     read_data_rate:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: read_data_rate
++            #       contains: [": HDD ReadDataRate"]
++            #       timeout: 3.0
++
++            #     write_data_rate:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: write_data_rate
++            #       contains: [": HDD WriteDataRate"]
++            #       timeout: 3.0
++
++            #     read_iops:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: read_iops
++            #       contains: [": HDD ReadIOPS"]
++            #       timeout: 3.0
++
++            #     write_iops:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: write_iops
++            #       contains: [": HDD WriteIOPS"]
++            #       timeout: 3.0
++
++            #     usage:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: usage
++            #       contains: [": HDD Usage"]
++            #       timeout: 3.0
++
++            #     power_on_hours:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: power_on_hours
++            #       contains: [": HDD PowerOnHours"]
++            #       timeout: 3.0
++
++            #     total_data_written:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: total_data_written
++            #       contains: [": HDD TotalDataWritten"]
++            #       timeout: 3.0
++
++            #     connection:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: connection
++            #       contains: [": HDD Connection"]
++            #       timeout: 3.0
++
++            # process:
++            #   type: diagnostic_aggregator/AnalyzerGroup
++            #   path: process
++            #   analyzers:
++            #     high_load:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: high_load
++            #       contains: [": High-load"]
++            #       timeout: 3.0
++
++            #     high_mem:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: high_mem
++            #       contains: [": High-mem"]
++            #       timeout: 3.0
++
++            #     tasks_summary:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: tasks_summary
++            #       contains: [": Tasks Summary"]
++            #       timeout: 3.0
++
++            # hardware:
++            #   type: diagnostic_aggregator/AnalyzerGroup
++            #   path: voltage
++            #   analyzers:
++            #     cmos_battery:
++            #       type: diagnostic_aggregator/GenericAnalyzer
++            #       path: cmos_battery
++            #       contains: [": CMOS Battery Status"]
++            #       timeout: 3.0
+diff --git a/autoware/src/universe/autoware.universe/system/system_error_monitor/config/system_error_monitor.param.yaml b/autoware/src/universe/autoware.universe/system/system_error_monitor/config/system_error_monitor.param.yaml
+index 312a2e61..389e500a 100644
+--- a/autoware/src/universe/autoware.universe/system/system_error_monitor/config/system_error_monitor.param.yaml
++++ b/autoware/src/universe/autoware.universe/system/system_error_monitor/config/system_error_monitor.param.yaml
+@@ -22,9 +22,9 @@
+         /autoware/control/control_command_gate/node_alive_monitoring: default
+         /autoware/control/autonomous_emergency_braking/performance_monitoring/emergency_stop: { sf_at: "none", lf_at: "warn", spf_at: "error", auto_recovery: "false"}
+ 
+-        /autoware/localization/node_alive_monitoring: default
+-        /autoware/localization/performance_monitoring/matching_score: { sf_at: "warn", lf_at: "none", spf_at: "none" }
+-        /autoware/localization/performance_monitoring/localization_accuracy: default
++        # /autoware/localization/node_alive_monitoring: default
++        # /autoware/localization/performance_monitoring/matching_score: { sf_at: "warn", lf_at: "none", spf_at: "none" }
++        # /autoware/localization/performance_monitoring/localization_accuracy: default
+ 
+         /autoware/map/node_alive_monitoring: default
+ 
+@@ -38,7 +38,7 @@
+         /autoware/system/node_alive_monitoring: default
+         /autoware/system/emergency_stop_operation: default
+         /autoware/system/service_log_checker: { sf_at: "warn", lf_at: "none", spf_at: "none" }
+-        /autoware/system/resource_monitoring: { sf_at: "warn", lf_at: "none", spf_at: "none" }
++        # /autoware/system/resource_monitoring: { sf_at: "warn", lf_at: "none", spf_at: "none" }
+ 
+         /autoware/vehicle/node_alive_monitoring: default
+ 
+diff --git a/autoware/src/universe/autoware.universe/system/system_error_monitor/src/system_error_monitor_core.cpp b/autoware/src/universe/autoware.universe/system/system_error_monitor/src/system_error_monitor_core.cpp
+index 57f67a24..b4138fa7 100644
+--- a/autoware/src/universe/autoware.universe/system/system_error_monitor/src/system_error_monitor_core.cpp
++++ b/autoware/src/universe/autoware.universe/system/system_error_monitor/src/system_error_monitor_core.cpp
+@@ -399,11 +399,11 @@ bool AutowareErrorMonitor::isDataReady()
+     return false;
+   }
+ 
+-  if (!control_mode_) {
+-    RCLCPP_INFO_THROTTLE(
+-      get_logger(), *get_clock(), 5000, "waiting for vehicle_state_report msg...");
+-    return false;
+-  }
++  // if (!control_mode_) {
++  //   RCLCPP_INFO_THROTTLE(
++  //     get_logger(), *get_clock(), 5000, "waiting for vehicle_state_report msg...");
++  //   return false;
++  // }
+   return true;
+ }
+ 
+@@ -433,11 +433,11 @@ bool AutowareErrorMonitor::isDataHeartbeatTimeout()
+     return true;
+   }
+ 
+-  if (isTimeout(control_mode_stamp_, params_.data_heartbeat_timeout)) {
+-    RCLCPP_ERROR_THROTTLE(
+-      get_logger(), *get_clock(), 5000, "vehicle_state_report msg is timeout...");
+-    return true;
+-  }
++  // if (isTimeout(control_mode_stamp_, params_.data_heartbeat_timeout)) {
++  //   RCLCPP_ERROR_THROTTLE(
++  //     get_logger(), *get_clock(), 5000, "vehicle_state_report msg is timeout...");
++  //   return true;
++  // }
+ 
+   return false;
+ }
+diff --git a/autoware/src/universe/autoware.universe/system/system_monitor/config/cpu_monitor.param.yaml b/autoware/src/universe/autoware.universe/system/system_monitor/config/cpu_monitor.param.yaml
+index da4d74e5..55e9ff8e 100644
+--- a/autoware/src/universe/autoware.universe/system/system_monitor/config/cpu_monitor.param.yaml
++++ b/autoware/src/universe/autoware.universe/system/system_monitor/config/cpu_monitor.param.yaml
+@@ -1,8 +1,8 @@
+-/**:
+-  ros__parameters:
+-    usage_warn: 0.96
+-    usage_error: 0.96
+-    usage_warn_count: 1
+-    usage_error_count: 2
+-    usage_avg: true
+-    msr_reader_port: 7634
++# /**:
++#   ros__parameters:
++#     usage_warn: 0.96
++#     usage_error: 0.96
++#     usage_warn_count: 1
++#     usage_error_count: 2
++#     usage_avg: true
++#     msr_reader_port: 7634
+diff --git a/autoware/src/universe/autoware.universe/system/system_monitor/config/gpu_monitor.param.yaml b/autoware/src/universe/autoware.universe/system/system_monitor/config/gpu_monitor.param.yaml
+index d96b9f24..36598190 100644
+--- a/autoware/src/universe/autoware.universe/system/system_monitor/config/gpu_monitor.param.yaml
++++ b/autoware/src/universe/autoware.universe/system/system_monitor/config/gpu_monitor.param.yaml
+@@ -1,8 +1,8 @@
+-/**:
+-  ros__parameters:
+-    temp_warn: 90.0
+-    temp_error: 95.0
+-    gpu_usage_warn: 0.90
+-    gpu_usage_error: 1.00
+-    memory_usage_warn: 0.95
+-    memory_usage_error: 0.99
++# /**:
++#   ros__parameters:
++#     temp_warn: 90.0
++#     temp_error: 95.0
++#     gpu_usage_warn: 0.90
++#     gpu_usage_error: 1.00
++#     memory_usage_warn: 0.95
++#     memory_usage_error: 0.99
+diff --git a/autoware/src/universe/autoware.universe/system/system_monitor/config/hdd_monitor.param.yaml b/autoware/src/universe/autoware.universe/system/system_monitor/config/hdd_monitor.param.yaml
+index d818d848..a6e378c3 100644
+--- a/autoware/src/universe/autoware.universe/system/system_monitor/config/hdd_monitor.param.yaml
++++ b/autoware/src/universe/autoware.universe/system/system_monitor/config/hdd_monitor.param.yaml
+@@ -1,23 +1,23 @@
+-/**:
+-  ros__parameters:
+-    hdd_reader_port: 7635
+-    num_disks: 1
+-    disks: # Until multi type lists are allowed, name N the disks as disk0...disk{N-1}
+-      disk0:
+-        name: /
+-        temp_attribute_id: 0xC2
+-        temp_warn: 55.0
+-        temp_error: 70.0
+-        power_on_hours_attribute_id: 0x09
+-        power_on_hours_warn: 3000000
+-        total_data_written_attribute_id: 0xF1
+-        total_data_written_warn: 4915200   # =150TB (1unit=32MB)
+-        total_data_written_safety_factor: 0.05
+-        recovered_error_attribute_id: 0xC3
+-        recovered_error_warn: 1
+-        free_warn: 5120 # MB(8hour)
+-        free_error: 100 # MB(last 1 minute)
+-        read_data_rate_warn: 360.0 # MB/s
+-        write_data_rate_warn: 103.5 # MB/s
+-        read_iops_warn: 63360.0 # IOPS
+-        write_iops_warn: 24120.0 # IOPS
++# /**:
++#   ros__parameters:
++#     hdd_reader_port: 7635
++#     num_disks: 1
++#     disks: # Until multi type lists are allowed, name N the disks as disk0...disk{N-1}
++#       disk0:
++#         name: /
++#         temp_attribute_id: 0xC2
++#         temp_warn: 55.0
++#         temp_error: 70.0
++#         power_on_hours_attribute_id: 0x09
++#         power_on_hours_warn: 3000000
++#         total_data_written_attribute_id: 0xF1
++#         total_data_written_warn: 4915200   # =150TB (1unit=32MB)
++#         total_data_written_safety_factor: 0.05
++#         recovered_error_attribute_id: 0xC3
++#         recovered_error_warn: 1
++#         free_warn: 5120 # MB(8hour)
++#         free_error: 100 # MB(last 1 minute)
++#         read_data_rate_warn: 360.0 # MB/s
++#         write_data_rate_warn: 103.5 # MB/s
++#         read_iops_warn: 63360.0 # IOPS
++#         write_iops_warn: 24120.0 # IOPS
+diff --git a/autoware/src/universe/autoware.universe/system/system_monitor/config/net_monitor.param.yaml b/autoware/src/universe/autoware.universe/system/system_monitor/config/net_monitor.param.yaml
+index f2c68add..ff3eba06 100644
+--- a/autoware/src/universe/autoware.universe/system/system_monitor/config/net_monitor.param.yaml
++++ b/autoware/src/universe/autoware.universe/system/system_monitor/config/net_monitor.param.yaml
+@@ -1,8 +1,8 @@
+-/**:
+-  ros__parameters:
+-    devices: ["*"]
+-    monitor_program: "greengrass"
+-    crc_error_check_duration: 1
+-    crc_error_count_threshold: 1
+-    reassembles_failed_check_duration: 1
+-    reassembles_failed_check_count: 1
++# /**:
++#   ros__parameters:
++#     devices: ["*"]
++#     monitor_program: "greengrass"
++#     crc_error_check_duration: 1
++#     crc_error_count_threshold: 1
++#     reassembles_failed_check_duration: 1
++#     reassembles_failed_check_count: 1

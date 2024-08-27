@@ -400,9 +400,12 @@ PlannerPlugin::LaneletRoute DefaultPlanner::plan(const RoutePoints & points)
     const auto start_check_point = points.at(i - 1);
     const auto goal_check_point = points.at(i);
     lanelet::ConstLanelets path_lanelets;
-    if (!route_handler_.planPathLaneletsBetweenCheckpoints(
-          start_check_point, goal_check_point, &path_lanelets)) {
-      return route_msg;
+
+    route_handler::id_buf start_ng_id;
+    while (!route_handler_.planPathLaneletsBetweenCheckpoints(
+          start_check_point, goal_check_point, &path_lanelets, &start_ng_id)) {
+      if ( start_ng_id.is_full() )
+        return route_msg;
     }
     for (const auto & lane : path_lanelets) {
       all_route_lanelets.push_back(lane);

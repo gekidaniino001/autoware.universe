@@ -399,11 +399,11 @@ bool AutowareErrorMonitor::isDataReady()
     return false;
   }
 
-  if (!control_mode_) {
-    RCLCPP_INFO_THROTTLE(
-      get_logger(), *get_clock(), 5000, "waiting for vehicle_state_report msg...");
-    return false;
-  }
+  // if (!control_mode_) {
+  //   RCLCPP_INFO_THROTTLE(
+  //     get_logger(), *get_clock(), 5000, "waiting for vehicle_state_report msg...");
+  //   return false;
+  // }
   return true;
 }
 
@@ -433,11 +433,11 @@ bool AutowareErrorMonitor::isDataHeartbeatTimeout()
     return true;
   }
 
-  if (isTimeout(control_mode_stamp_, params_.data_heartbeat_timeout)) {
-    RCLCPP_ERROR_THROTTLE(
-      get_logger(), *get_clock(), 5000, "vehicle_state_report msg is timeout...");
-    return true;
-  }
+  // if (isTimeout(control_mode_stamp_, params_.data_heartbeat_timeout)) {
+  //   RCLCPP_ERROR_THROTTLE(
+  //     get_logger(), *get_clock(), 5000, "vehicle_state_report msg is timeout...");
+  //   return true;
+  // }
 
   return false;
 }

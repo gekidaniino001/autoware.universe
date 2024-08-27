@@ -1761,10 +1761,17 @@ lanelet::ConstLanelets RouteHandler::getNextLaneSequence(
 
 bool RouteHandler::planPathLaneletsBetweenCheckpoints(
   const Pose & start_checkpoint, const Pose & goal_checkpoint,
-  lanelet::ConstLanelets * path_lanelets) const
+  lanelet::ConstLanelets * path_lanelets, id_buf *start_ng_id ) const
 {
+  lanelet::ConstLanelets tmp;
+  for (const auto & llt : road_lanelets_ ) {
+    if ( start_ng_id != nullptr && start_ng_id->is_in( llt.id() ) )
+      continue;
+    tmp.push_back( llt );
+  }
+
   lanelet::Lanelet start_lanelet;
-  if (!lanelet::utils::query::getClosestLanelet(road_lanelets_, start_checkpoint, &start_lanelet)) {
+  if (!lanelet::utils::query::getClosestLanelet(tmp, start_checkpoint, &start_lanelet)) {
     return false;
   }
   lanelet::Lanelet goal_lanelet;
@@ -1783,6 +1790,10 @@ bool RouteHandler::planPathLaneletsBetweenCheckpoints(
                  << "goal checkpoint: " << toString(goal_checkpoint) << std::endl
                  << "start lane id: " << start_lanelet.id() << std::endl
                  << "goal lane id: " << goal_lanelet.id() << std::endl);
+
+    if ( start_ng_id != nullptr )
+      start_ng_id->add( start_lanelet.id() );
+
     return false;
   }
 

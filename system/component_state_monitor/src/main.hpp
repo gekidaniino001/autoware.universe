@@ -71,6 +71,8 @@ private:
   void update_state(const StateType & type, const Module & module, bool state);
   void on_timer();
   void on_diag(const DiagnosticArray::ConstSharedPtr msg);
+
+  bool iino_sim_;
 };
 
 }  // namespace component_state_monitor
