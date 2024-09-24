@@ -55,9 +55,9 @@ ArrivalChecker::ArrivalChecker(rclcpp::Node * node) : vehicle_stop_checker_(node
     "input/arrival_check_duration", 1,
     [this](const std_msgs::msg::Float64::ConstSharedPtr msg) { set_duration(msg->data); });
 
-  sub_force_arrival_ = node->create_subscription<std_msgs::msg::Bool>(
+  sub_force_arrival_ = node->create_subscription<std_msgs::msg::Int8>(
     "input/force_arrival", 1,
-    [this](const std_msgs::msg::Bool::ConstSharedPtr msg) { force_arrival(msg->data); });
+    [this](const std_msgs::msg::Int8::ConstSharedPtr msg) { force_arrival(msg->data); });
 
   sub_goal_ = node->create_subscription<PoseWithUuidStamped>(
     "input/modified_goal", 1,
@@ -139,9 +139,9 @@ void ArrivalChecker::set_duration(double duration)
   }
 }
 
-void ArrivalChecker::force_arrival(bool force_arrival)
+void ArrivalChecker::force_arrival(int force_arrival)
 {
-  if ( can_change_params_ && force_arrival ) {
+  if ( can_change_params_ && force_arrival > 0 ) {
     force_arrival_ = true;
   }
 }
@@ -197,15 +197,15 @@ bool ArrivalChecker::is_arrived(const PoseStamped & pose)
     msg_unmet_goal_reason_.data += "vehicle_not_stopped, ";
   }
 
+  if (has_reached_goal_) {
+    msg_unmet_goal_reason_.data = "None(reached_goal)";
+  }
+
   // Check force arrival.
   if (force_arrival_) {
     has_reached_goal_ = true;
     force_arrival_ = false;
     msg_unmet_goal_reason_.data = "None(force_arrival)";
-  }
-
-  if (has_reached_goal_) {
-    msg_unmet_goal_reason_.data = "None(reached_goal)";
   }
 
   return has_reached_goal_;
