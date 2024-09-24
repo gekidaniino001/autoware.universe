@@ -40,6 +40,7 @@ ArrivalChecker::ArrivalChecker(rclcpp::Node * node) : vehicle_stop_checker_(node
   duration_ = default_duration_;
   can_change_params_ = node->declare_parameter<bool>("can_change_params", true);
   receiving_topic_ = false;
+  // force_arrival_ = false;
 
   sub_angle_deg_ = node->create_subscription<std_msgs::msg::Float64>(
     "input/arrival_check_angle", 1, [this](const std_msgs::msg::Float64::ConstSharedPtr msg) {
@@ -54,9 +55,9 @@ ArrivalChecker::ArrivalChecker(rclcpp::Node * node) : vehicle_stop_checker_(node
     "input/arrival_check_duration", 1,
     [this](const std_msgs::msg::Float64::ConstSharedPtr msg) { set_duration(msg->data); });
 
-  sub_force_arrival_ = node->create_subscription<std_msgs::msg::Bool>(
-    "input/force_arrival", 1,
-    [this](const std_msgs::msg::Bool::ConstSharedPtr msg) { force_arrival(msg->data); });
+  // sub_force_arrival_ = node->create_subscription<std_msgs::msg::Bool>(
+  //   "input/force_arrival", 1,
+  //   [this](const std_msgs::msg::Bool::ConstSharedPtr msg) { force_arrival(msg->data); });
 
   sub_goal_ = node->create_subscription<PoseWithUuidStamped>(
     "input/modified_goal", 1,
@@ -138,12 +139,12 @@ void ArrivalChecker::set_duration(double duration)
   }
 }
 
-void ArrivalChecker::force_arrival(bool force_arrival)
-{
-  if ( can_change_params_ && force_arrival ) {
-    force_arrival_ = true;
-  }
-}
+// void ArrivalChecker::force_arrival(bool force_arrival)
+// {
+//   if ( can_change_params_ && force_arrival ) {
+//     force_arrival_ = true;
+//   }
+// }
 
 void ArrivalChecker::publish_debug_info()
 {
@@ -155,7 +156,7 @@ void ArrivalChecker::publish_debug_info()
 bool ArrivalChecker::is_arrived(const PoseStamped & pose)
 {
   bool has_reached_goal_ = true;
-  msg_unmet_goal_reason_.data = "unmet_goal_reason: ";
+  msg_unmet_goal_reason_.data = "";
   if (!goal_with_uuid_) {
     msg_unmet_goal_reason_.data += "not_goal_with_uuid, ";
     has_reached_goal_ = false;
@@ -197,11 +198,11 @@ bool ArrivalChecker::is_arrived(const PoseStamped & pose)
   }
 
   // Check force arrival.
-  if (force_arrival_) {
-    has_reached_goal_ = true;
-    force_arrival_ = false;
-    msg_unmet_goal_reason_.data = "None(force_arrival)";
-  }
+  // if (force_arrival_) {
+  //   has_reached_goal_ = true;
+  //   force_arrival_ = false;
+  //   msg_unmet_goal_reason_.data = "None(force_arrival)";
+  // }
 
   if (has_reached_goal_) {
     msg_unmet_goal_reason_.data = "None(reached_goal)";
