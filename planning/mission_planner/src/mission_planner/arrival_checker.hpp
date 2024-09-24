@@ -61,6 +61,7 @@ private:
   rclcpp::Publisher<Float64>::SharedPtr pub_arrival_distance_;
   motion_utils::VehicleStopChecker vehicle_stop_checker_;
   bool receiving_topic_;
+  bool force_arrival_;
   void check_receiving_topic();
   void modify_goal(const PoseWithUuidStamped & modified_goal);
   void set_distance(double distance);
