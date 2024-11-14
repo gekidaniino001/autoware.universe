@@ -210,41 +210,41 @@ def launch_setup(context, *args, **kwargs):
         executable=LaunchConfiguration("container_executable"),
         composable_node_descriptions=[
             obstacle_avoidance_planner_component,
-            obstacle_velocity_limiter_component,
+            # obstacle_velocity_limiter_component,
         ],
     )
 
-    obstacle_stop_planner_loader = LoadComposableNodes(
-        composable_node_descriptions=[obstacle_stop_planner_component],
-        target_container=container,
-        condition=LaunchConfigurationEquals("cruise_planner_type", "obstacle_stop_planner"),
-    )
+    # obstacle_stop_planner_loader = LoadComposableNodes(
+    #     composable_node_descriptions=[obstacle_stop_planner_component],
+    #     target_container=container,
+    #     condition=LaunchConfigurationEquals("cruise_planner_type", "obstacle_stop_planner"),
+    # )
 
-    obstacle_cruise_planner_loader = LoadComposableNodes(
-        composable_node_descriptions=[obstacle_cruise_planner_component],
-        target_container=container,
-        condition=LaunchConfigurationEquals("cruise_planner_type", "obstacle_cruise_planner"),
-    )
+    # obstacle_cruise_planner_loader = LoadComposableNodes(
+    #     composable_node_descriptions=[obstacle_cruise_planner_component],
+    #     target_container=container,
+    #     condition=LaunchConfigurationEquals("cruise_planner_type", "obstacle_cruise_planner"),
+    # )
 
-    obstacle_cruise_planner_relay_loader = LoadComposableNodes(
-        composable_node_descriptions=[obstacle_cruise_planner_relay_component],
-        target_container=container,
-        condition=LaunchConfigurationEquals("cruise_planner_type", "none"),
-    )
+    # obstacle_cruise_planner_relay_loader = LoadComposableNodes(
+    #     composable_node_descriptions=[obstacle_cruise_planner_relay_component],
+    #     target_container=container,
+    #     condition=LaunchConfigurationEquals("cruise_planner_type", "none"),
+    # )
 
-    surround_obstacle_checker_loader = LoadComposableNodes(
-        composable_node_descriptions=[surround_obstacle_checker_component],
-        target_container=container,
-        condition=IfCondition(LaunchConfiguration("use_surround_obstacle_check")),
-    )
+    # surround_obstacle_checker_loader = LoadComposableNodes(
+    #     composable_node_descriptions=[surround_obstacle_checker_component],
+    #     target_container=container,
+    #     condition=IfCondition(LaunchConfiguration("use_surround_obstacle_check")),
+    # )
 
     group = GroupAction(
         [
             container,
-            obstacle_stop_planner_loader,
-            obstacle_cruise_planner_loader,
-            obstacle_cruise_planner_relay_loader,
-            surround_obstacle_checker_loader,
+            # obstacle_stop_planner_loader,
+            # obstacle_cruise_planner_loader,
+            # obstacle_cruise_planner_relay_loader,
+            # surround_obstacle_checker_loader,
         ]
     )
     return [group]
