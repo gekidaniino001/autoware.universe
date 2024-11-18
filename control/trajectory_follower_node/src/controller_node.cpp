@@ -77,12 +77,120 @@ Controller::Controller(const rclcpp::NodeOptions & node_options) : Node("control
   debug_marker_pub_ =
     create_publisher<visualization_msgs::msg::MarkerArray>("~/output/debug_marker", rclcpp::QoS{1});
 
+  // add switch forward or reverse
+  sub_turn_pose_cmd_ = create_subscription<std_msgs::msg::String>(
+    "/iino/turn_pose_cmd", rclcpp::QoS{1},
+    std::bind(&Controller::onTurnPoseCmd, this, std::placeholders::_1));
+
+  sub_init_pose_ = create_subscription<iino_msgs::msg::PoseStampedWithName>(
+    "/initpose/cmd", rclcpp::QoS{1},
+    std::bind(&Controller::onInitPose, this, std::placeholders::_1));
+
+  auto operation_qos = rclcpp::QoS(1)
+    .reliable()
+    .transient_local()
+    .keep_last(1);
+
+  pub_turn_pose_res_ = create_publisher<std_msgs::msg::String>(
+    "/iino/turn_pose_res", operation_qos);
+
+  pub_driving_direction_ = create_publisher<std_msgs::msg::String>(
+    "~/output/driving_direction", rclcpp::QoS{1});
+
+
+
+
   // Timer
   {
     const auto period_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::duration<double>(ctrl_period));
     timer_control_ = rclcpp::create_timer(
       this, get_clock(), period_ns, std::bind(&Controller::callbackTimerControl, this));
+  }
+}
+
+void Controller::onTurnPoseCmd(const std_msgs::msg::String::SharedPtr msg)
+{
+  is_reverse_mode_ = !is_reverse_mode_;  // モード切り替え
+  
+  // 現在の走行方向をパブリッシュ
+  auto direction_msg = std::make_unique<std_msgs::msg::String>();
+  direction_msg->data = is_reverse_mode_ ? "REVERSE" : "FORWARD";
+  pub_driving_direction_->publish(*direction_msg);
+
+  // レスポンスの送信
+  auto res_msg = std::make_unique<std_msgs::msg::String>();
+  res_msg->data = msg->data;  // 受け取ったUUIDをそのまま返す
+  pub_turn_pose_res_->publish(*res_msg);
+
+  RCLCPP_INFO(
+    get_logger(), "Switching to %s mode with UUID: %s",
+    is_reverse_mode_ ? "REVERSE" : "FORWARD", msg->data.c_str());
+}
+
+void Controller::onInitPose(const iino_msgs::msg::PoseStampedWithName::SharedPtr msg)
+{
+  if (is_reverse_mode_) {
+    is_reverse_mode_ = false;  // 前進モードに設定
+    
+    // 走行方向をパブリッシュ
+    auto direction_msg = std::make_unique<std_msgs::msg::String>();
+    direction_msg->data = "FORWARD";
+    pub_driving_direction_->publish(*direction_msg);
+
+    RCLCPP_INFO(
+      get_logger(), "Switched to FORWARD mode due to initial pose setting. Name: %s",
+      msg->name.c_str());
+  }
+}
+
+void Controller::onTrajectory(const autoware_auto_planning_msgs::msg::Trajectory::SharedPtr msg)
+{
+  // Create a deep copy of the input trajectory
+  auto trajectory = std::make_shared<autoware_auto_planning_msgs::msg::Trajectory>(*msg);
+
+  if (is_reverse_mode_) {
+    // 後退モードの場合、軌道を変換
+    for (auto & point : trajectory->points) {
+      // 速度を反転
+      point.longitudinal_velocity_mps = -point.longitudinal_velocity_mps;
+      
+      // 加速度を反転
+      point.acceleration_mps2 = -point.acceleration_mps2;
+      
+      // ステアリング角を反転
+      point.front_wheel_angle_rad = -point.front_wheel_angle_rad;
+      
+      // 向きを180度回転
+      double roll, pitch, yaw;
+      tf2::Quaternion q(
+        point.pose.orientation.x,
+        point.pose.orientation.y,
+        point.pose.orientation.z,
+        point.pose.orientation.w);
+      tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+      
+      yaw += M_PI;  // 180度回転
+      q.setRPY(roll, pitch, yaw);
+      
+      point.pose.orientation.x = q.x();
+      point.pose.orientation.y = q.y();
+      point.pose.orientation.z = q.z();
+      point.pose.orientation.w = q.w();
+    }
+  }
+
+  current_trajectory_ptr_ = trajectory;
+
+  // Log the current mode and trajectory details
+  if (is_reverse_mode_) {
+    RCLCPP_DEBUG(
+      get_logger(), "Received and reversed trajectory with %lu points", 
+      trajectory->points.size());
+  } else {
+    RCLCPP_DEBUG(
+      get_logger(), "Received trajectory with %lu points", 
+      trajectory->points.size());
   }
 }
 
@@ -103,10 +211,6 @@ Controller::LongitudinalControllerMode Controller::getLongitudinalControllerMode
   return LongitudinalControllerMode::INVALID;
 }
 
-void Controller::onTrajectory(const autoware_auto_planning_msgs::msg::Trajectory::SharedPtr msg)
-{
-  current_trajectory_ptr_ = msg;
-}
 
 void Controller::onOdometry(const nav_msgs::msg::Odometry::SharedPtr msg)
 {
