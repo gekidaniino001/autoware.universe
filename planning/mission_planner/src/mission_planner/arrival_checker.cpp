@@ -59,8 +59,8 @@ ArrivalChecker::ArrivalChecker(rclcpp::Node * node) : vehicle_stop_checker_(node
     "input/modified_goal", 1,
     [this](const PoseWithUuidStamped::ConstSharedPtr msg) { modify_goal(*msg); });
 
-  sub_turn_pose_ = create_subscription<std_msgs::msg::String>(
-    "/iino/turn_pose", 1,
+  sub_turn_pose_ = node->create_subscription<std_msgs::msg::String>(
+    "/control/trajectory_follower/controller_node_exe/output/driving_direction", 1,
     [this](const std_msgs::msg::String::ConstSharedPtr msg) { on_turn_pose(msg->data); });
 
   pub_unmet_goal_reason_ = node->create_publisher<std_msgs::msg::String>("debug/unmet_goal_reason", 1);
@@ -179,9 +179,9 @@ bool ArrivalChecker::is_arrived(const PoseStamped & pose)
 
   // Check angle.
   const double yaw_goal = tf2::getYaw(goal.pose.orientation);
-  const double yaw_pose = tf2::getYaw(pose.pose.orientation);
-  if (turn_pose_ == "b"){
-    yaw_pose = -yaw_pose
+  double yaw_pose = tf2::getYaw(pose.pose.orientation);
+  if (turn_pose_ == "REVERSE"){
+    yaw_pose += M_PI;
     while (yaw_pose > M_PI) yaw_pose -= 2 * M_PI;
     while (yaw_pose < -M_PI) yaw_pose += 2 * M_PI;
   }

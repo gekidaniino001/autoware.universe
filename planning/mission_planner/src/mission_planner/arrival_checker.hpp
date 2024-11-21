@@ -56,6 +56,7 @@ private:
   rclcpp::Subscription<Float64>::SharedPtr sub_angle_deg_;
   rclcpp::Subscription<Float64>::SharedPtr sub_distance_;
   rclcpp::Subscription<Float64>::SharedPtr sub_duration_;
+  rclcpp::Subscription<String>::SharedPtr sub_turn_pose_;
   rclcpp::Subscription<PoseWithUuidStamped>::SharedPtr sub_goal_;
   rclcpp::Publisher<String>::SharedPtr pub_unmet_goal_reason_;
   rclcpp::Publisher<Float64>::SharedPtr pub_goal_distance_;
