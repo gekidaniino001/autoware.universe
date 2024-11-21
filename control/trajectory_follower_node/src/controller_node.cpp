@@ -154,6 +154,10 @@ void Controller::onTrajectory(const autoware_auto_planning_msgs::msg::Trajectory
     for (auto & point : trajectory->points) {
       // 速度を反転
       point.longitudinal_velocity_mps = -point.longitudinal_velocity_mps;
+      point.lateral_velocity_mps = -point.lateral_velocity_mps;
+      point.heading_rate_rps = -point.heading_rate_rps;
+
+      
       
       // 加速度を反転
       point.acceleration_mps2 = -point.acceleration_mps2;
