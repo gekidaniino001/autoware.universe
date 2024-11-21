@@ -20,6 +20,7 @@
 #include <iostream>
 #include <iterator>
 #include <string>
+#include <cmath>
 
 using std::cin;
 using std::cout;
@@ -57,6 +58,10 @@ ArrivalChecker::ArrivalChecker(rclcpp::Node * node) : vehicle_stop_checker_(node
   sub_goal_ = node->create_subscription<PoseWithUuidStamped>(
     "input/modified_goal", 1,
     [this](const PoseWithUuidStamped::ConstSharedPtr msg) { modify_goal(*msg); });
+
+  sub_turn_pose_ = node->create_subscription<std_msgs::msg::String>(
+    "/control/trajectory_follower/controller_node_exe/output/driving_direction", 1,
+    [this](const std_msgs::msg::String::ConstSharedPtr msg) { on_turn_pose(msg->data); });
 
   pub_unmet_goal_reason_ = node->create_publisher<std_msgs::msg::String>("debug/unmet_goal_reason", 1);
   pub_goal_distance_ = node->create_publisher<std_msgs::msg::Float64>("debug/goal_distance", 1);
@@ -141,6 +146,11 @@ void ArrivalChecker::publish_debug_info()
   pub_arrival_distance_->publish(msg_arrival_distance_);
 }
 
+void ArrivalChecker::on_turn_pose(const string & turn_pose)
+{
+  turn_pose_ = turn_pose;
+}
+
 bool ArrivalChecker::is_arrived(const PoseStamped & pose)
 {
   bool has_reached_goal_ = true;
@@ -168,14 +178,21 @@ bool ArrivalChecker::is_arrived(const PoseStamped & pose)
   }
 
   // Check angle.
-  const double yaw_pose = tf2::getYaw(pose.pose.orientation);
   const double yaw_goal = tf2::getYaw(goal.pose.orientation);
+  double yaw_pose = tf2::getYaw(pose.pose.orientation);
+  if (turn_pose_ == "REVERSE"){
+    yaw_pose += M_PI;
+    while (yaw_pose > M_PI) yaw_pose -= 2 * M_PI;
+    while (yaw_pose < -M_PI) yaw_pose += 2 * M_PI;
+  }
   const double yaw_diff = tier4_autoware_utils::normalizeRadian(yaw_pose - yaw_goal);
   if (angle_ < std::fabs(yaw_diff)) {
     has_reached_goal_ = false;
     msg_unmet_goal_reason_.data += "angle, ";
     // return false;
   }
+
+
 
   // Check vehicle stopped.
   // return vehicle_stop_checker_.isVehicleStopped(duration_);

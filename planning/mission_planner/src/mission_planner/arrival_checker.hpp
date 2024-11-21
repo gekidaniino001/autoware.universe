@@ -48,6 +48,7 @@ private:
   double duration_;
   double default_duration_;
   double can_change_params_;
+  std::string turn_pose_;
   std::optional<PoseWithUuidStamped> goal_with_uuid_;
   std_msgs::msg::String msg_unmet_goal_reason_;
   std_msgs::msg::Float64 msg_goal_distance_;
@@ -55,6 +56,7 @@ private:
   rclcpp::Subscription<Float64>::SharedPtr sub_angle_deg_;
   rclcpp::Subscription<Float64>::SharedPtr sub_distance_;
   rclcpp::Subscription<Float64>::SharedPtr sub_duration_;
+  rclcpp::Subscription<String>::SharedPtr sub_turn_pose_;
   rclcpp::Subscription<PoseWithUuidStamped>::SharedPtr sub_goal_;
   rclcpp::Publisher<String>::SharedPtr pub_unmet_goal_reason_;
   rclcpp::Publisher<Float64>::SharedPtr pub_goal_distance_;
@@ -67,6 +69,7 @@ private:
   void set_angle(double angle);
   void set_duration(double duration);
   void publish_debug_info();
+  void on_turn_pose(const std::string & turn_pose);
   rclcpp::TimerBase::SharedPtr tmr_pub_{};
   rclcpp::TimerBase::SharedPtr tmr_check_receiving_topic_{};
 };
