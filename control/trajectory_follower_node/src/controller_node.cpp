@@ -76,6 +76,14 @@ Controller::Controller(const rclcpp::NodeOptions & node_options) : Node("control
     "~/output/control_cmd", rclcpp::QoS{1}.transient_local());
   debug_marker_pub_ =
     create_publisher<visualization_msgs::msg::MarkerArray>("~/output/debug_marker", rclcpp::QoS{1});
+  // コンストラクタ内に追加するコード
+  auto qos_gear = rclcpp::QoS(1).reliable().transient_local();
+  sub_gear_command_ = create_subscription<GearCommand>(
+    "/planning/gear_command", qos_gear,
+    std::bind(&Controller::onGearCommand, this, std::placeholders::_1));
+  gear_response_pub_ = create_publisher<GearCommand>(
+    "/planning/gear_response", qos_gear);
+
 
   // Timer
   {
@@ -105,7 +113,56 @@ Controller::LongitudinalControllerMode Controller::getLongitudinalControllerMode
 
 void Controller::onTrajectory(const autoware_auto_planning_msgs::msg::Trajectory::SharedPtr msg)
 {
-  current_trajectory_ptr_ = msg;
+  // Create a deep copy of the input trajectory
+  auto trajectory = std::make_shared<autoware_auto_planning_msgs::msg::Trajectory>(*msg);
+
+  if (is_reverse_mode_) {
+    // 後退モードの場合、軌道を変換
+    for (auto & point : trajectory->points) {
+      // 速度を反転
+      point.longitudinal_velocity_mps = -point.longitudinal_velocity_mps;
+      point.lateral_velocity_mps = -point.lateral_velocity_mps;
+      point.heading_rate_rps = -point.heading_rate_rps;
+
+      
+      
+      // 加速度を反転
+      point.acceleration_mps2 = -point.acceleration_mps2;
+      
+      // ステアリング角を反転
+      point.front_wheel_angle_rad = -point.front_wheel_angle_rad;
+      
+      // 向きを180度回転
+      double roll, pitch, yaw;
+      tf2::Quaternion q(
+        point.pose.orientation.x,
+        point.pose.orientation.y,
+        point.pose.orientation.z,
+        point.pose.orientation.w);
+      tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+      
+      yaw += M_PI;  // 180度回転
+      q.setRPY(roll, pitch, yaw);
+      
+      point.pose.orientation.x = q.x();
+      point.pose.orientation.y = q.y();
+      point.pose.orientation.z = q.z();
+      point.pose.orientation.w = q.w();
+    }
+  }
+
+  current_trajectory_ptr_ = trajectory;
+
+  // Log the current mode and trajectory details
+  if (is_reverse_mode_) {
+    RCLCPP_DEBUG(
+      get_logger(), "Received and reversed trajectory with %lu points", 
+      trajectory->points.size());
+  } else {
+    RCLCPP_DEBUG(
+      get_logger(), "Received trajectory with %lu points", 
+      trajectory->points.size());
+  }
 }
 
 void Controller::onOdometry(const nav_msgs::msg::Odometry::SharedPtr msg)
@@ -121,6 +178,25 @@ void Controller::onSteering(const autoware_auto_vehicle_msgs::msg::SteeringRepor
 void Controller::onAccel(const geometry_msgs::msg::AccelWithCovarianceStamped::SharedPtr msg)
 {
   current_accel_ptr_ = msg;
+}
+
+void Controller::onGearCommand(const GearCommand::SharedPtr msg)
+{
+  // GearCommandの値に応じて方向を切り替え
+  bool should_be_reverse = (msg->command == GearCommand::BACKWARD);
+  
+  if (is_reverse_mode_ != should_be_reverse) {
+    is_reverse_mode_ = should_be_reverse;
+    
+    RCLCPP_INFO(
+      get_logger(), "Switching to %s mode due to gear command: %d",
+      is_reverse_mode_ ? "BACKWARD" : "FORWARD", msg->command);
+  }
+
+  // レスポンスの送信
+  auto response = std::make_unique<GearCommand>();
+  response->command = msg->command;
+  gear_response_pub_->publish(*response);
 }
 
 bool Controller::isTimeOut(
