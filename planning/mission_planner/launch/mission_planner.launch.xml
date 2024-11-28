@@ -9,5 +9,6 @@
     <remap from="input/modified_goal" to="$(var modified_goal_topic_name)"/>
     <remap from="input/vector_map" to="$(var map_topic_name)"/>
     <remap from="debug/route_marker" to="$(var visualization_topic_name)"/>
+    <remap from="/localization/kinematic_state" to="/localization/modified_kinematic_state"/>
   </node>
 </launch>
