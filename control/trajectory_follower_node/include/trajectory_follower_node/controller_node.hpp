@@ -35,7 +35,6 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "tf2_msgs/msg/tf_message.hpp"
-#include "iino_msgs/msg/iino_gear_command.hpp"
 
 #include <memory>
 #include <string>
@@ -50,8 +49,6 @@ namespace trajectory_follower_node
 {
 
 using autoware_adapi_v1_msgs::msg::OperationModeState;
-using iino_msgs::msg::IinoGearCommand;
-
 
 namespace trajectory_follower = ::autoware::motion::control::trajectory_follower;
 
@@ -76,10 +73,9 @@ private:
   rclcpp::Subscription<autoware_auto_vehicle_msgs::msg::SteeringReport>::SharedPtr sub_steering_;
   rclcpp::Subscription<geometry_msgs::msg::AccelWithCovarianceStamped>::SharedPtr sub_accel_;
   rclcpp::Subscription<OperationModeState>::SharedPtr sub_operation_mode_;
-  rclcpp::Subscription<IinoGearCommand>::SharedPtr sub_gear_command_;
-  rclcpp::Publisher<autoware_auto_control_msgs::msg::AckermannControlCommand>::SharedPtr control_cmd_pub_;
+  rclcpp::Publisher<autoware_auto_control_msgs::msg::AckermannControlCommand>::SharedPtr
+    control_cmd_pub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr debug_marker_pub_;
-  rclcpp::Publisher<IinoGearCommand>::SharedPtr gear_response_pub_;
 
   autoware_auto_planning_msgs::msg::Trajectory::SharedPtr current_trajectory_ptr_;
   nav_msgs::msg::Odometry::SharedPtr current_odometry_ptr_;
@@ -87,8 +83,6 @@ private:
   geometry_msgs::msg::AccelWithCovarianceStamped::SharedPtr current_accel_ptr_;
   OperationModeState::SharedPtr current_operation_mode_ptr_;
 
-  
-  bool is_reverse_mode_{false};
   enum class LateralControllerMode {
     INVALID = 0,
     MPC = 1,
@@ -109,7 +103,6 @@ private:
   void onSteering(const autoware_auto_vehicle_msgs::msg::SteeringReport::SharedPtr msg);
   void onAccel(const geometry_msgs::msg::AccelWithCovarianceStamped::SharedPtr msg);
   bool isTimeOut(const LongitudinalOutput & lon_out, const LateralOutput & lat_out);
-  void onGearCommand(const IinoGearCommand::SharedPtr msg);
   LateralControllerMode getLateralControllerMode(const std::string & algorithm_name) const;
   LongitudinalControllerMode getLongitudinalControllerMode(
     const std::string & algorithm_name) const;
