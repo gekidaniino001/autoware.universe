@@ -78,10 +78,10 @@ Controller::Controller(const rclcpp::NodeOptions & node_options) : Node("control
     create_publisher<visualization_msgs::msg::MarkerArray>("~/output/debug_marker", rclcpp::QoS{1});
   // コンストラクタ内に追加するコード
   auto qos_gear = rclcpp::QoS(1).reliable().transient_local();
-  sub_gear_command_ = create_subscription<GearCommand>(
+  sub_gear_command_ = create_subscription<IinoGearCommand>(
     "/planning/gear_command", qos_gear,
     std::bind(&Controller::onGearCommand, this, std::placeholders::_1));
-  gear_response_pub_ = create_publisher<GearCommand>(
+  gear_response_pub_ = create_publisher<IinoGearCommand>(
     "/planning/gear_response", qos_gear);
 
 
@@ -180,10 +180,10 @@ void Controller::onAccel(const geometry_msgs::msg::AccelWithCovarianceStamped::S
   current_accel_ptr_ = msg;
 }
 
-void Controller::onGearCommand(const GearCommand::SharedPtr msg)
+void Controller::onGearCommand(const IinoGearCommand::SharedPtr msg)
 {
   // GearCommandの値に応じて方向を切り替え
-  bool should_be_reverse = (msg->command == GearCommand::BACKWARD);
+  bool should_be_reverse = (msg->command == IinoGearCommand::BACKWARD);
   
   if (is_reverse_mode_ != should_be_reverse) {
     is_reverse_mode_ = should_be_reverse;
@@ -194,7 +194,7 @@ void Controller::onGearCommand(const GearCommand::SharedPtr msg)
   }
 
   // レスポンスの送信
-  auto response = std::make_unique<GearCommand>();
+  auto response = std::make_unique<IinoGearCommand>();
   response->command = msg->command;
   gear_response_pub_->publish(*response);
 }
