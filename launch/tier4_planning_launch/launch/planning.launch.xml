@@ -78,13 +78,13 @@
     </group>
 
     <!-- planning validator -->
-    <!-- <group>
+    <group>
       <include file="$(find-pkg-share planning_validator)/launch/planning_validator.launch.xml">
-        <arg name="input_trajectory" value="/planning/scenario_planning/motion_velocity_smoother/trajectory"/>
+        <arg name="input_trajectory" value="/planning/scenario_planning/lane_driving/motion_planning/obstacle_avoidance_planner/trajectory"/>
         <arg name="output_trajectory" value="/planning/scenario_planning/trajectory"/>
         <arg name="planning_validator_param_path" value="$(var planning_validator_param_path)"/>
       </include>
-    </group> -->
+    </group>
 
     <!-- planning evaluator -->
     <!-- <group>
