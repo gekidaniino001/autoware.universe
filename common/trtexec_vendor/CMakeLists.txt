@@ -17,7 +17,7 @@ find_package(CUDNN)
 find_package(tensorrt_cmake_module REQUIRED)
 find_package(TENSORRT)
 
-if(NOT (${CUDA_FOUND} AND ${CUDNN_FOUND} AND ${TENSORRT_FOUND}))
+if(${CUDA_FOUND} AND ${CUDNN_FOUND} AND ${TENSORRT_FOUND})
   message(WARNING "cuda, cudnn, tensorrt libraries are not found")
   return()
 endif()
