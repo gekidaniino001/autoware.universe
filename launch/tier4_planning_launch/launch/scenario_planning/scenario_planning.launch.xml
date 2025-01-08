@@ -1,6 +1,6 @@
 <launch>
   <!-- scenario selector -->
-  <group>
+  <!-- <group>
     <include file="$(find-pkg-share scenario_selector)/launch/scenario_selector.launch.xml">
       <arg name="input_lane_driving_trajectory" value="/planning/scenario_planning/lane_driving/trajectory"/>
       <arg name="input_parking_trajectory" value="/planning/scenario_planning/parking/trajectory"/>
@@ -11,19 +11,19 @@
       <arg name="output_trajectory" value="/planning/scenario_planning/scenario_selector/trajectory"/>
       <arg name="is_parking_completed" value="/planning/scenario_planning/parking/is_completed"/>
     </include>
-  </group>
+  </group> -->
 
   <!-- velocity planning with max velocity, acceleration, jerk, stop point constraint -->
   <group>
     <!-- external velocity limit selector -->
-    <group>
+    <!-- <group>
       <include file="$(find-pkg-share external_velocity_limit_selector)/launch/external_velocity_limit_selector.launch.xml">
         <arg name="common_param_path" value="$(var common_param_path)"/>
         <arg name="param_path" value="$(var motion_velocity_smoother_param_path)"/>
       </include>
-    </group>
+    </group> -->
     <!-- motion velocity smoother -->
-    <group>
+    <!-- <group>
       <set_remap from="~/input/trajectory" to="/planning/scenario_planning/scenario_selector/trajectory"/>
       <set_remap from="~/output/trajectory" to="/planning/scenario_planning/motion_velocity_smoother/trajectory"/>
       <include file="$(find-pkg-share motion_velocity_smoother)/launch/motion_velocity_smoother.launch.xml">
@@ -33,7 +33,7 @@
         <arg name="param_path" value="$(var motion_velocity_smoother_param_path)"/>
         <arg name="smoother_param_path" value="$(var smoother_type_param_path)"/>
       </include>
-    </group>
+    </group> -->
   </group>
 
   <!-- scenarios-->
@@ -51,10 +51,10 @@
       </include>
     </group>
     <!-- parking -->
-    <group>
+    <!-- <group>
       <include file="$(find-pkg-share tier4_planning_launch)/launch/scenario_planning/parking.launch.py">
         <arg name="vehicle_param_file" value="$(var vehicle_param_file)"/>
       </include>
-    </group>
+    </group> -->
   </group>
 </launch>

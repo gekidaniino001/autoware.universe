@@ -980,7 +980,8 @@ bool BehaviorPathPlannerNode::isDataReady()
   };
 
   if (!current_scenario_) {
-    return missing("scenario_topic");
+    // return missing("scenario_topic");
+
   }
 
   {
@@ -1027,9 +1028,9 @@ void BehaviorPathPlannerNode::run()
   RCLCPP_DEBUG(get_logger(), "----- BehaviorPathPlannerNode start -----");
 
   // behavior_path_planner runs only in LANE DRIVING scenario.
-  if (current_scenario_->current_scenario != Scenario::LANEDRIVING) {
-    return;
-  }
+  // if (current_scenario_->current_scenario != Scenario::LANEDRIVING) {
+  //   return;
+  // }
 
   // check for map update
   HADMapBin::ConstSharedPtr map_ptr{nullptr};

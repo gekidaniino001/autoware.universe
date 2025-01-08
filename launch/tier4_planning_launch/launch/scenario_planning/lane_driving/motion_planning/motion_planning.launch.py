@@ -210,7 +210,7 @@ def launch_setup(context, *args, **kwargs):
         executable=LaunchConfiguration("container_executable"),
         composable_node_descriptions=[
             obstacle_avoidance_planner_component,
-            obstacle_velocity_limiter_component,
+            # obstacle_velocity_limiter_component,
         ],
     )
 
@@ -241,10 +241,10 @@ def launch_setup(context, *args, **kwargs):
     group = GroupAction(
         [
             container,
-            obstacle_stop_planner_loader,
-            obstacle_cruise_planner_loader,
-            obstacle_cruise_planner_relay_loader,
-            surround_obstacle_checker_loader,
+            # obstacle_stop_planner_loader,
+            # obstacle_cruise_planner_loader,
+            # obstacle_cruise_planner_relay_loader,
+            # surround_obstacle_checker_loader,
         ]
     )
     return [group]
