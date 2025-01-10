@@ -99,7 +99,7 @@ endif()
 set(DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/data)
 execute_process(COMMAND mkdir -p ${DATA_PATH})
 
-if(NOT (TRT_AVAIL AND CUDA_AVAIL AND CUDNN_AVAIL))
+if(TRT_AVAIL AND CUDA_AVAIL AND CUDNN_AVAIL)
   # Download trained models
 
   message(STATUS "start to download")

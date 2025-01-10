@@ -70,7 +70,7 @@ else()
 endif()
 
 message(STATUS "start to download")
-if(NOT (TRT_AVAIL AND CUDA_AVAIL AND CUDNN_AVAIL))
+if(TRT_AVAIL AND CUDA_AVAIL AND CUDNN_AVAIL)
 # Download trained models
   set(DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/data)
   set(DOWNLOAD_BASE_URL https://awf.ml.dev.web.auto/perception/models/centerpoint)
