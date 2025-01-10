@@ -122,7 +122,7 @@ if(NOT EXISTS "${CALIB_IMAGE_PATH}")
   execute_process(COMMAND mkdir -p ${CALIB_IMAGE_PATH})
 endif()
 
-if(TRT_AVAIL AND CUDA_AVAIL AND CUDNN_AVAIL)
+if(NOT (TRT_AVAIL AND CUDA_AVAIL AND CUDNN_AVAIL))
   include_directories(
     include
     lib/include
