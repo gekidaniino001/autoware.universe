@@ -36,7 +36,7 @@ RingOutlierFilterComponent::RingOutlierFilterComponent(const rclcpp::NodeOptions
     distance_ratio_ = static_cast<double>(declare_parameter("distance_ratio", 1.03));
     object_length_threshold_ =
       static_cast<double>(declare_parameter("object_length_threshold", 0.1));
-    num_points_threshold_ = static_cast<int>(declare_parameter("num_points_threshold", 4));
+    num_points_threshold_ = static_cast<int>(declare_parameter("num_points_threshold", 12));
   }
 
   using std::placeholders::_1;
