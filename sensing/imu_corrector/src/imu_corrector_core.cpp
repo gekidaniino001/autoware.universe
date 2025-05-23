@@ -100,6 +100,11 @@ void ImuCorrector::callbackImu(const sensor_msgs::msg::Imu::ConstSharedPtr imu_m
     return;
   }
 
+  // ハードコードで角速度補正
+  imu_msg.angular_velocity.x -= -0.0007456851052221866;
+  imu_msg.angular_velocity.y -= -0.003834951969714103;
+  imu_msg.angular_velocity.z -= 0.010226538585904275;
+
   sensor_msgs::msg::Imu imu_msg_base_link;
   imu_msg_base_link.header.stamp = imu_msg_ptr->header.stamp;
   imu_msg_base_link.header.frame_id = output_frame_;
