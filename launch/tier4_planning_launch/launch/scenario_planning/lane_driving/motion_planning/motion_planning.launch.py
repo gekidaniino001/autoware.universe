@@ -212,6 +212,7 @@ def launch_setup(context, *args, **kwargs):
             obstacle_avoidance_planner_component,
             # obstacle_velocity_limiter_component,
         ],
+        condition=IfCondition(LaunchConfiguration("launch_obstacle_avoidance_planner")),
     )
 
     obstacle_stop_planner_loader = LoadComposableNodes(
@@ -266,6 +267,13 @@ def generate_launch_description():
         "input_path_topic",
         "/planning/scenario_planning/lane_driving/behavior_planning/path",
         "input path topic of obstacle_avoidance_planner",
+    )
+
+    # common parameter
+    add_launch_arg(
+        "launch_obstacle_avoidance_planner",
+        "false",
+        "launch pure obstacle_avoidance_planner node or not",
     )
 
     # package parameter

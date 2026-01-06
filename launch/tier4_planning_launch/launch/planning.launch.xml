@@ -9,6 +9,7 @@
   <arg name="pointcloud_container_name"/>
   <arg name="use_surround_obstacle_check"/>
   <arg name="use_experimental_lane_change_function"/>
+  <arg name="launch_obstacle_avoidance_planner" default="true"/>
 
   <!-- common -->
   <arg name="common_param_path"/>
@@ -74,13 +75,14 @@
         <arg name="use_surround_obstacle_check" value="$(var use_surround_obstacle_check)"/>
         <arg name="cruise_planner_type" value="$(var cruise_planner_type)"/>
         <arg name="use_experimental_lane_change_function" value="$(var use_experimental_lane_change_function)"/>
+        <arg name="launch_obstacle_avoidance_planner" value="$(var launch_obstacle_avoidance_planner)"/>
       </include>
     </group>
 
     <!-- planning validator -->
     <group>
       <include file="$(find-pkg-share planning_validator)/launch/planning_validator.launch.xml">
-        <arg name="input_trajectory" value="/planning/scenario_planning/lane_driving/motion_planning/obstacle_avoidance_planner/trajectory"/>
+        <arg name="input_trajectory" value="/iino_planning/avoidance_planner/trajectory"/>
         <arg name="output_trajectory" value="/planning/scenario_planning/trajectory"/>
         <arg name="planning_validator_param_path" value="$(var planning_validator_param_path)"/>
       </include>

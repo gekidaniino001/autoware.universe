@@ -1,4 +1,5 @@
 <launch>
+  <arg name="launch_obstacle_avoidance_planner" default="false"/>
   <!-- lane_driving scenario -->
   <group>
     <push-ros-namespace namespace="lane_driving"/>
@@ -7,6 +8,7 @@
       <push-ros-namespace namespace="behavior_planning"/>
       <group>
         <include file="$(find-pkg-share tier4_planning_launch)/launch/scenario_planning/lane_driving/behavior_planning/behavior_planning.launch.py">
+          <!-- <arg name="input_route_topic_name" value="/freespace_route_planner/route"/> -->
           <arg name="vehicle_param_file" value="$(var vehicle_param_file)"/>
           <arg name="use_multithread" value="true"/>
           <arg name="use_pointcloud_container" value="$(var use_pointcloud_container)"/>
@@ -29,6 +31,7 @@
         <arg name="use_multithread" value="true"/>
         <arg name="use_surround_obstacle_check" value="$(var use_surround_obstacle_check)"/>
         <arg name="cruise_planner_type" value="$(var cruise_planner_type)"/>
+        <arg name="launch_obstacle_avoidance_planner" value="$(var launch_obstacle_avoidance_planner)"/>
       </include>
     </group>
   </group>
