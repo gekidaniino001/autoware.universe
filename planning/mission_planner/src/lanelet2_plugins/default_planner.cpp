@@ -350,7 +350,7 @@ bool DefaultPlanner::is_goal_valid(
       lanelet::utils::query::getAllParkingLots(lanelet_map_ptr_),
       lanelet::utils::conversion::toLaneletPoint(goal.position))) {
     RCLCPP_WARN(logger, "Goal's footprint exceeds lane!");
-    return false;
+    // return false;
   }
 
   if (is_in_lane(closest_lanelet, goal_lanelet_pt)) {
