@@ -26,6 +26,7 @@
 #include <autoware_planning_msgs/msg/lanelet_route.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
+#include <iino_msgs/msg/lanelet_id_route.hpp>
 
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -47,6 +48,7 @@ using ClearRoute = planning_interface::ClearRoute;
 using Route = planning_interface::Route;
 using RouteState = planning_interface::RouteState;
 using Odometry = nav_msgs::msg::Odometry;
+using LaneletIdRoute = iino_msgs::msg::LaneletIdRoute;
 
 class MissionPlanner : public rclcpp::Node
 {
@@ -65,6 +67,10 @@ private:
   rclcpp::Subscription<Odometry>::SharedPtr sub_odometry_;
   Odometry::ConstSharedPtr odometry_;
   void on_odometry(const Odometry::ConstSharedPtr msg);
+
+  // 追加: lanelet id列 + goal を topic で受ける
+  rclcpp::Subscription<LaneletIdRoute>::SharedPtr sub_lanelet_id_route_;
+  void on_lanelet_id_route(const LaneletIdRoute::ConstSharedPtr msg);
 
   rclcpp::Publisher<MarkerArray>::SharedPtr pub_marker_;
   void change_route();

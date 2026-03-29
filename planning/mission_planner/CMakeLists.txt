@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 project(mission_planner)
 
 find_package(autoware_cmake REQUIRED)
+find_package(iino_msgs REQUIRED)
 autoware_package()
 
 ament_auto_add_library(goal_pose_visualizer_component SHARED

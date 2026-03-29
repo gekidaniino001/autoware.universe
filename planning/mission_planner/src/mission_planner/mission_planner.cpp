@@ -75,7 +75,9 @@ MissionPlanner::MissionPlanner(const rclcpp::NodeOptions & options)
   sub_odometry_ = create_subscription<Odometry>(
     "/localization/kinematic_state", rclcpp::QoS(1),
     std::bind(&MissionPlanner::on_odometry, this, std::placeholders::_1));
-
+  sub_lanelet_id_route_ = create_subscription<LaneletIdRoute>(
+    "~/input/lanelet_id_route", rclcpp::QoS(1),
+    std::bind(&MissionPlanner::on_lanelet_id_route, this, std::placeholders::_1));
   const auto durable_qos = rclcpp::QoS(1).transient_local();
   pub_marker_ = create_publisher<MarkerArray>("debug/route_marker", durable_qos);
 
@@ -236,6 +238,90 @@ void MissionPlanner::on_set_route_points(
   change_route(route);
   change_state(RouteState::Message::SET);
   res->status.success = true;
+}
+
+void MissionPlanner::on_lanelet_id_route(const LaneletIdRoute::ConstSharedPtr msg)
+{
+  if (!odometry_) {
+    RCLCPP_WARN(get_logger(), "The vehicle pose is not received.");
+    return;
+  }
+
+  if (msg->lanelet_ids.empty()) {
+    RCLCPP_WARN(get_logger(), "Received empty lanelet id list.");
+    return;
+  }
+
+  // route を強制上書き
+  change_route();
+  change_state(RouteState::Message::UNSET);
+
+  PoseStamped goal_pose_stamped;
+  goal_pose_stamped.header = msg->header;
+  goal_pose_stamped.pose = msg->goal;
+  const auto goal_pose = transform_pose(goal_pose_stamped).pose;
+
+  LaneletRoute route;
+  route.start_pose = odometry_->pose.pose;
+  route.goal_pose = goal_pose;
+  route.header.stamp = msg->header.stamp;
+  route.header.frame_id = map_frame_;
+  route.uuid.uuid = generate_random_id();
+
+  // 1. 固定 lanelet 列をそのまま積む
+  for (const auto & id : msg->lanelet_ids) {
+    LaneletSegment segment;
+    segment.preferred_primitive.id = id;
+    segment.preferred_primitive.primitive_type = "lane";
+    segment.primitives.push_back(segment.preferred_primitive);
+    route.segments.push_back(segment);
+  }
+
+  // 2. 補完部分
+  if (msg->allow_auto_connect) {
+    PlannerPlugin::RoutePoints points;
+
+    // 固定 route の最後から goal へ補完したいので、
+    // 本当は「最後の lanelet 上の終端pose」を入れたい。
+    // ただし最小変更で済ませるなら、いったん最後の固定区間の代表点を
+    // planner 側で解決できるようにする必要がある。
+    //
+    // もし last_fixed_pose を作れる helper があるならそれを使う:
+    //   const auto last_fixed_pose = get_last_pose_from_lanelet_id(msg->lanelet_ids.back());
+    //
+    // 今回は helper がある前提で書く。
+    const auto last_fixed_pose = get_last_pose_from_lanelet_id(msg->lanelet_ids.back());
+
+    points.push_back(last_fixed_pose);
+    points.push_back(goal_pose);
+
+    LaneletRoute extra_route = planner_->plan(points);
+    if (extra_route.segments.empty()) {
+      RCLCPP_WARN(
+        get_logger(),
+        "Auto-complement route is empty. Use only fixed lanelet_ids route.");
+    } else {
+      // 先頭 segment が固定 route の最後と重複することがあるので除去
+      std::size_t start_index = 0;
+      if (!route.segments.empty() && !extra_route.segments.empty()) {
+        const auto & fixed_last = route.segments.back().preferred_primitive;
+        const auto & extra_first = extra_route.segments.front().preferred_primitive;
+        if (
+          fixed_last.id == extra_first.id &&
+          fixed_last.primitive_type == extra_first.primitive_type)
+        {
+          start_index = 1;
+        }
+      }
+
+      for (std::size_t i = start_index; i < extra_route.segments.size(); ++i) {
+        route.segments.push_back(convert(extra_route.segments[i]));
+      }
+    }
+  }
+
+  change_route(route);
+  change_state(RouteState::Message::SET);
 }
 
 }  // namespace mission_planner
