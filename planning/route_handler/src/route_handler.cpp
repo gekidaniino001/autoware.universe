@@ -333,6 +333,11 @@ void RouteHandler::setLaneletsFromRouteMsg()
     }
   }
   is_handler_ready_ = true;
+  route_index_map_.clear();
+  for (size_t i = 0; i < route_lanelets_.size(); ++i) {
+    route_index_map_[route_lanelets_[i].id()] = i;
+  }
+  last_closest_route_index_.reset();
 }
 
 lanelet::ConstPolygon3d RouteHandler::getIntersectionAreaById(const lanelet::Id id) const
@@ -721,7 +726,46 @@ lanelet::ConstLanelets RouteHandler::getShoulderLaneletSequence(
 bool RouteHandler::getClosestLaneletWithinRoute(
   const Pose & search_pose, lanelet::ConstLanelet * closest_lanelet) const
 {
-  return lanelet::utils::query::getClosestLanelet(route_lanelets_, search_pose, closest_lanelet);
+  std::vector<lanelet::ConstLanelet> candidates;
+  candidates.reserve(route_lanelets_.size());
+
+  for (const auto & llt : route_lanelets_) {
+    auto it = route_index_map_.find(llt.id());
+    if (it == route_index_map_.end()) {
+      continue;
+    }
+
+    if (last_closest_route_index_) {
+      const auto idx = it->second;
+      const auto last = *last_closest_route_index_;
+
+      // 飛びすぎ禁止
+      if (idx + 1 < last) {
+        continue;
+      }
+      if (idx > last + max_lane_jump_) {
+        continue;
+      }
+    }
+
+    candidates.push_back(llt);
+  }
+
+  if (candidates.empty()) {
+    candidates = route_lanelets_;
+  }
+
+  lanelet::ConstLanelet best;
+  if (!lanelet::utils::query::getClosestLanelet(candidates, search_pose, &best)) {
+    return false;
+  }
+
+  *closest_lanelet = best;
+  auto it = route_index_map_.find(best.id());
+  if (it != route_index_map_.end()) {
+    last_closest_route_index_ = it->second;
+  }
+  return true;
 }
 
 bool RouteHandler::getNextLaneletWithinRoute(

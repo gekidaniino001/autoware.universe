@@ -39,6 +39,8 @@
 #include <limits>
 #include <memory>
 #include <vector>
+#include <optional>
+#include <unordered_map>
 
 namespace route_handler
 {
@@ -401,6 +403,10 @@ private:
   lanelet::ConstLanelets getNeighborsWithinRoute(const lanelet::ConstLanelet & lanelet) const;
   std::vector<lanelet::ConstLanelets> getLaneSection(const lanelet::ConstLanelet & lanelet) const;
   lanelet::ConstLanelets getNextLaneSequence(const lanelet::ConstLanelets & lane_sequence) const;
+  
+  std::unordered_map<lanelet::Id, size_t> route_index_map_;
+  mutable std::optional<size_t> last_closest_route_index_;
+  size_t max_lane_jump_{2};
 
   // for path
 
