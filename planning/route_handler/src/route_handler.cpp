@@ -784,25 +784,40 @@ bool RouteHandler::getNextLaneletWithinRoute(
   return false;
 }
 
-lanelet::ConstLanelets RouteHandler::getNextLanelets(const lanelet::ConstLanelet & lanelet) const
+bool RouteHandler::getNextLaneletWithinRoute(
+  const lanelet::ConstLanelet & lanelet, lanelet::ConstLanelet * next_lanelet) const
 {
-  return routing_graph_ptr_->following(lanelet);
-}
-
-bool RouteHandler::getPreviousLaneletsWithinRoute(
-  const lanelet::ConstLanelet & lanelet, lanelet::ConstLanelets * prev_lanelets) const
-{
-  if (exists(start_lanelets_, lanelet)) {
+  auto cur_it = route_index_map_.find(lanelet.id());
+  if (cur_it == route_index_map_.end()) {
     return false;
   }
-  const auto candidate_lanelets = routing_graph_ptr_->previous(lanelet);
-  prev_lanelets->clear();
-  for (const auto & llt : candidate_lanelets) {
-    if (exists(route_lanelets_, llt)) {
-      prev_lanelets->push_back(llt);
+  const auto cur_idx = cur_it->second;
+
+  bool found = false;
+  size_t best_idx = std::numeric_limits<size_t>::max();
+
+  for (const auto & llt : routing_graph_ptr_->following(lanelet)) {
+    if (!exists(route_lanelets_, llt)) {
+      continue;
+    }
+
+    auto it = route_index_map_.find(llt.id());
+    if (it == route_index_map_.end()) {
+      continue;
+    }
+
+    if (it->second <= cur_idx) {
+      continue;
+    }
+
+    if (it->second < best_idx) {
+      best_idx = it->second;
+      *next_lanelet = llt;
+      found = true;
     }
   }
-  return !(prev_lanelets->empty());
+
+  return found;
 }
 
 lanelet::ConstLanelets RouteHandler::getPreviousLanelets(
