@@ -29,6 +29,7 @@
 #include <autoware_planning_msgs/msg/lanelet_segment.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <unique_identifier_msgs/msg/uuid.hpp>
+#include <std_msgs/msg/int32.hpp>
 
 #include <lanelet2_routing/Route.h>
 #include <lanelet2_routing/RoutingCost.h>
@@ -88,6 +89,8 @@ public:
   void setMap(const HADMapBin & map_msg);
   void setRoute(const LaneletRoute & route_msg);
   void setRouteLanelets(const lanelet::ConstLanelets & path_lanelets);
+  void setPublisher(rclcpp::Node * node);
+  void publishDrivingLaneletId(const Pose & current_pose) const;
 
   // const methods
 
@@ -289,8 +292,8 @@ public:
   int getNumLaneToPreferredLane(
     const lanelet::ConstLanelet & lanelet, const Direction direction = Direction::NONE) const;
 
-  bool getClosestLaneletWithinRoute(
-    const Pose & search_pose, lanelet::ConstLanelet * closest_lanelet) const;
+  bool getDrivingLanelet(
+    const Pose & search_pose, lanelet::ConstLanelet * driving_lanelet) const;
 
   lanelet::ConstLanelet getLaneletsFromId(const lanelet::Id id) const;
   lanelet::ConstLanelets getLaneletsFromIds(const lanelet::Ids & ids) const;
@@ -348,6 +351,7 @@ private:
   LaneletRoute route_msg_;
 
   rclcpp::Logger logger_{rclcpp::get_logger("route_handler")};
+  std::shared_ptr<rclcpp::Publisher<std_msgs::msg::Int32>> lanelet_id_pub_;
 
   bool is_route_msg_ready_{false};
   bool is_map_msg_ready_{false};

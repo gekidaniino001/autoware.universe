@@ -58,6 +58,7 @@ BehaviorPathPlannerNode::BehaviorPathPlannerNode(const rclcpp::NodeOptions & nod
     planner_data_ = std::make_shared<PlannerData>();
     planner_data_->parameters = getCommonParam();
     planner_data_->drivable_area_expansion_parameters.init(*this);
+    planner_data_->route_handler->setPublisher(this);
   }
 
   // publisher
@@ -98,7 +99,7 @@ BehaviorPathPlannerNode::BehaviorPathPlannerNode(const rclcpp::NodeOptions & nod
     "~/input/lateral_offset", 1, std::bind(&BehaviorPathPlannerNode::onLateralOffset, this, _1),
     createSubscriptionOptions(this));
   operation_mode_subscriber_ = create_subscription<OperationModeState>(
-    "/system/operation_mode/state", 1,
+    "/system/operation_mode/state", rclcpp::QoS{1}.transient_local(),
     std::bind(&BehaviorPathPlannerNode::onOperationMode, this, _1),
     createSubscriptionOptions(this));
   scenario_subscriber_ = create_subscription<Scenario>(
@@ -1016,6 +1017,14 @@ bool BehaviorPathPlannerNode::isDataReady()
     return missing("operation_mode");
   }
 
+  if (planner_data_->route_handler->isHandlerReady()) {
+    lanelet::ConstLanelet driving_lanelet;
+    if (!planner_data_->route_handler->getDrivingLanelet(
+          planner_data_->self_odometry->pose.pose, &driving_lanelet)) {
+      return missing("driving_lanelet (outside route polygon)");
+    }
+  }
+
   return true;
 }
 
@@ -1110,6 +1119,7 @@ void BehaviorPathPlannerNode::run()
   // NOTE: In order to keep backward_path_length at least, resampling interval is added to the
   // backward.
   const auto current_pose = planner_data_->self_odometry->pose.pose;
+  planner_data_->route_handler->publishDrivingLaneletId(current_pose);
   const size_t current_seg_idx = planner_data_->findEgoSegmentIndex(path->points);
   path->points = motion_utils::cropPoints(
     path->points, current_pose.position, current_seg_idx,
@@ -1357,6 +1367,9 @@ PathWithLaneId::SharedPtr BehaviorPathPlannerNode::getPath(
   // TODO(Horibe) do some error handling when path is not available.
 
   auto path = bt_output.path ? bt_output.path : planner_data->prev_output_path;
+  if (!path) {
+    path = std::make_shared<PathWithLaneId>();
+  }
   path->header = planner_data->route_handler->getRouteHeader();
   path->header.stamp = this->now();
   RCLCPP_DEBUG(
