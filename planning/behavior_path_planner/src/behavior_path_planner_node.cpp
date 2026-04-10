@@ -1034,6 +1034,7 @@ void BehaviorPathPlannerNode::run()
     return;
   }
 
+  RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 10000, "[BPP] run() started (throttle 10s)");
   RCLCPP_DEBUG(get_logger(), "----- BehaviorPathPlannerNode start -----");
 
   // behavior_path_planner runs only in LANE DRIVING scenario.
@@ -1109,6 +1110,12 @@ void BehaviorPathPlannerNode::run()
 #endif
   // update planner data
   planner_data_->prev_output_path = path;
+
+  if (path->points.empty()) {
+    RCLCPP_ERROR_THROTTLE(
+      get_logger(), *get_clock(), 5000, "behavior path output is empty! Stop publish.");
+    return;
+  }
 
   // compute turn signal
   computeTurnSignal(planner_data_, *path, output);
