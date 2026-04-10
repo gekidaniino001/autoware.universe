@@ -761,6 +761,27 @@ bool RouteHandler::getDrivingLanelet(
   }
 
   // どのポリゴン内にも入っていない場合は最近傍で選択
+  // ただしスタートのlanelet（route_index=0）が1.5m以内なら優先的に返す
+  constexpr double start_lanelet_dist_threshold = 1.5;
+  for (const auto & llt : route_lanelets_) {
+    auto it = route_index_map_.find(llt.id());
+    if (it == route_index_map_.end() || it->second != 0) {
+      continue;
+    }
+    const double dist = boost::geometry::distance(llt.polygon2d().basicPolygon(), search_point);
+    if (dist <= start_lanelet_dist_threshold) {
+      RCLCPP_WARN(
+        logger_,
+        "getDrivingLanelet: pose (%.2f, %.2f) is outside all route lanelet polygons. "
+        "returning start lanelet (id: %ld, dist: %.3f).",
+        search_pose.position.x, search_pose.position.y, llt.id(), dist);
+      *driving_lanelet = llt;
+      last_closest_route_index_ = 0;
+      return true;
+    }
+    break;
+  }
+
   lanelet::ConstLanelet closest;
   if (!lanelet::utils::query::getClosestLanelet(route_lanelets_, search_pose, &closest)) {
     return false;
