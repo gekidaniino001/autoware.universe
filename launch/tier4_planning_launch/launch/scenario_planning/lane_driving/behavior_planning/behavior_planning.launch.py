@@ -158,7 +158,7 @@ def launch_setup(context, *args, **kwargs):
         name="behavior_velocity_planner",
         namespace="",
         remappings=[
-            ("~/input/path_with_lane_id", "path_with_lane_id"),
+            ("~/input/path_with_lane_id", "iino_path_with_lane_id"),
             ("~/input/vector_map", "/map/vector_map"),
             ("~/input/vehicle_odometry", "/localization/modified_kinematic_state"),
             ("~/input/accel", "/localization/modified_acceleration"),
