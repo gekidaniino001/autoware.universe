@@ -52,6 +52,7 @@ private:
   double max_ego_moving_dist_;
   double max_goal_moving_dist_;
   double max_delta_time_sec_;
+  double max_ego_behind_dist_;
 
   bool isPathAroundEgoChanged(
     const PlannerData & planner_data, const std::vector<TrajectoryPoint> & prev_traj_points) const;

@@ -30,6 +30,7 @@ ReplanChecker::ReplanChecker(rclcpp::Node * node, const EgoNearestParam & ego_ne
   max_ego_moving_dist_ = node->declare_parameter<double>("replan.max_ego_moving_dist");
   max_goal_moving_dist_ = node->declare_parameter<double>("replan.max_goal_moving_dist");
   max_delta_time_sec_ = node->declare_parameter<double>("replan.max_delta_time_sec");
+  max_ego_behind_dist_ = node->declare_parameter<double>("replan.max_ego_behind_dist");
 }
 
 void ReplanChecker::onParam(const std::vector<rclcpp::Parameter> & parameters)
@@ -41,6 +42,7 @@ void ReplanChecker::onParam(const std::vector<rclcpp::Parameter> & parameters)
   updateParam<double>(parameters, "replan.max_ego_moving_dist", max_ego_moving_dist_);
   updateParam<double>(parameters, "replan.max_goal_moving_dist", max_goal_moving_dist_);
   updateParam<double>(parameters, "replan.max_delta_time_sec", max_delta_time_sec_);
+  updateParam<double>(parameters, "replan.max_ego_behind_dist", max_ego_behind_dist_);
 }
 
 bool ReplanChecker::isResetRequired(const PlannerData & planner_data)
@@ -73,6 +75,16 @@ bool ReplanChecker::isResetRequired(const PlannerData & planner_data)
       RCLCPP_INFO(
         logger_,
         "Replan with resetting optimization since current ego pose is far from previous ego pose.");
+      return true;
+    }
+
+    // ego moved backward behind the previous trajectory start
+    const double lon_offset_from_prev_front = motion_utils::calcSignedArcLength(
+      prev_traj_points, prev_traj_points.front().pose.position, p.ego_pose.position);
+    if (lon_offset_from_prev_front < -max_ego_behind_dist_) {
+      RCLCPP_INFO(
+        logger_,
+        "Replan with resetting optimization since ego moved behind previous trajectory start.");
       return true;
     }
 

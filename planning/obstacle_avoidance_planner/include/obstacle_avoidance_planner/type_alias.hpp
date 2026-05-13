@@ -19,6 +19,7 @@
 #include "autoware_auto_planning_msgs/msg/path_point.hpp"
 #include "autoware_auto_planning_msgs/msg/trajectory.hpp"
 #include "autoware_auto_planning_msgs/msg/trajectory_point.hpp"
+#include "iino_msgs/msg/iino_path.hpp"
 #include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/pose.hpp"
 #include "geometry_msgs/msg/twist.hpp"
@@ -32,7 +33,7 @@ namespace obstacle_avoidance_planner
 // std_msgs
 using std_msgs::msg::Header;
 // planning
-using autoware_auto_planning_msgs::msg::Path;
+using Path = iino_msgs::msg::IinoPath;
 using autoware_auto_planning_msgs::msg::PathPoint;
 using autoware_auto_planning_msgs::msg::Trajectory;
 using autoware_auto_planning_msgs::msg::TrajectoryPoint;

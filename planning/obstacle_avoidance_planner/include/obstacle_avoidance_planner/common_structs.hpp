@@ -34,8 +34,10 @@ struct PlannerData
   // input
   Header header;
   std::vector<TrajectoryPoint> traj_points;  // converted from the input path
-  std::vector<geometry_msgs::msg::Point> left_bound;
-  std::vector<geometry_msgs::msg::Point> right_bound;
+  std::vector<geometry_msgs::msg::Point> left_bound;   // hard bound (absolute limit)
+  std::vector<geometry_msgs::msg::Point> right_bound;  // hard bound (absolute limit)
+  std::vector<geometry_msgs::msg::Point> soft_left_bound;   // soft bound (preferred limit)
+  std::vector<geometry_msgs::msg::Point> soft_right_bound;  // soft bound (preferred limit)
 
   // ego
   geometry_msgs::msg::Pose ego_pose;

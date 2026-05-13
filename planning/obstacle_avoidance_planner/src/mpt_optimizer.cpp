@@ -110,6 +110,18 @@ std::tuple<Eigen::VectorXd, Eigen::VectorXd> extractBounds(
   return {ub_vec, lb_vec};
 }
 
+std::tuple<Eigen::VectorXd, Eigen::VectorXd> extractHardBounds(
+  const std::vector<ReferencePoint> & ref_points, const size_t l_idx, const double offset)
+{
+  Eigen::VectorXd ub_vec(ref_points.size());
+  Eigen::VectorXd lb_vec(ref_points.size());
+  for (size_t i = 0; i < ref_points.size(); ++i) {
+    ub_vec(i) = ref_points.at(i).hard_bounds_on_constraints.at(l_idx).upper_bound + offset;
+    lb_vec(i) = ref_points.at(i).hard_bounds_on_constraints.at(l_idx).lower_bound - offset;
+  }
+  return {ub_vec, lb_vec};
+}
+
 std::vector<double> toStdVector(const Eigen::VectorXd & eigen_vec)
 {
   return {eigen_vec.data(), eigen_vec.data() + eigen_vec.rows()};
@@ -199,6 +211,7 @@ MPTOptimizer::MPTParam::MPTParam(
   {  // common
     num_points = node->declare_parameter<int>("mpt.common.num_points");
     delta_arc_length = node->declare_parameter<double>("mpt.common.delta_arc_length");
+    num_fixed_points = node->declare_parameter<int>("mpt.common.num_fixed_points");
   }
 
   // kinematics
@@ -311,6 +324,7 @@ void MPTOptimizer::MPTParam::onParam(const std::vector<rclcpp::Parameter> & para
   // common
   updateParam<int>(parameters, "mpt.common.num_points", num_points);
   updateParam<double>(parameters, "mpt.common.delta_arc_length", delta_arc_length);
+  updateParam<int>(parameters, "mpt.common.num_fixed_points", num_fixed_points);
 
   // kinematics
   updateParam<double>(
@@ -585,7 +599,7 @@ std::vector<ReferencePoint> MPTOptimizer::calcReferencePoints(
 
   // 6. update bounds
   // NOTE: After this, resample must not be called since bounds are not interpolated.
-  updateBounds(ref_points, p.left_bound, p.right_bound);
+  updateBounds(ref_points, p.left_bound, p.right_bound, p.soft_left_bound, p.soft_right_bound);
   updateVehicleBounds(ref_points, ref_points_spline);
 
   // 7. update delta arc length
@@ -671,6 +685,15 @@ void MPTOptimizer::updateFixedPoint(std::vector<ReferencePoint> & ref_points) co
     ref_points.front().pose = front_point.pose;
     ref_points.front().curvature = front_point.curvature;
     ref_points.front().fixed_kinematic_state = front_point.optimized_kinematic_state;
+  }
+
+  // fix additional points beyond the default 1-2
+  for (int k = 2; k < mpt_param_.num_fixed_points && k < static_cast<int>(ref_points.size()); ++k) {
+    const size_t prev_idx = motion_utils::findFirstNearestIndexWithSoftConstraints(
+      *prev_ref_points_ptr_, ref_points.at(k).pose, ego_nearest_param_.dist_threshold,
+      ego_nearest_param_.yaw_threshold);
+    ref_points.at(k).fixed_kinematic_state =
+      prev_ref_points_ptr_->at(prev_idx).optimized_kinematic_state;
   }
 
   time_keeper_ptr_->toc(__func__, "          ");
@@ -780,12 +803,17 @@ void MPTOptimizer::updateExtraPoints(std::vector<ReferencePoint> & ref_points) c
 void MPTOptimizer::updateBounds(
   std::vector<ReferencePoint> & ref_points,
   const std::vector<geometry_msgs::msg::Point> & left_bound,
-  const std::vector<geometry_msgs::msg::Point> & right_bound) const
+  const std::vector<geometry_msgs::msg::Point> & right_bound,
+  const std::vector<geometry_msgs::msg::Point> & soft_left_bound,
+  const std::vector<geometry_msgs::msg::Point> & soft_right_bound) const
 {
   time_keeper_ptr_->tic(__func__);
 
-  const double soft_road_clearance =
-    mpt_param_.soft_clearance_from_road + vehicle_info_.vehicle_width_m / 2.0;
+  const double vehicle_half_width = vehicle_info_.vehicle_width_m / 2.0;
+  const double scalar_soft_clearance = mpt_param_.soft_clearance_from_road + vehicle_half_width;
+  const double scalar_hard_clearance = mpt_param_.hard_clearance_from_road + vehicle_half_width;
+  const bool use_spatial_soft_bounds =
+    !soft_left_bound.empty() && !soft_right_bound.empty();
 
   // calculate distance to left/right bound on each reference point
   // NOTE: Reference points is sometimes not fully covered by the drivable area.
@@ -795,12 +823,28 @@ void MPTOptimizer::updateBounds(
     static_cast<size_t>(std::ceil(1.0 / mpt_param_.delta_arc_length)), ref_points.size() - 1);
   for (size_t i = 0; i < ref_points.size(); ++i) {
     const auto ref_point_for_bound_search = ref_points.at(std::max(min_ref_point_index, i));
-    const double dist_to_left_bound = calcLateralDistToBounds(
-      ref_point_for_bound_search.pose, left_bound, soft_road_clearance, true);
-    const double dist_to_right_bound = calcLateralDistToBounds(
-      ref_point_for_bound_search.pose, right_bound, soft_road_clearance, false);
+    double dist_to_left_bound, dist_to_right_bound;
+    if (use_spatial_soft_bounds) {
+      // Use spatial soft bounds for the soft constraint boundary (vehicle prefers to stay within)
+      dist_to_left_bound = calcLateralDistToBounds(
+        ref_point_for_bound_search.pose, soft_left_bound, vehicle_half_width, true);
+      dist_to_right_bound = calcLateralDistToBounds(
+        ref_point_for_bound_search.pose, soft_right_bound, vehicle_half_width, false);
+    } else {
+      dist_to_left_bound = calcLateralDistToBounds(
+        ref_point_for_bound_search.pose, left_bound, scalar_soft_clearance, true);
+      dist_to_right_bound = calcLateralDistToBounds(
+        ref_point_for_bound_search.pose, right_bound, scalar_soft_clearance, false);
+    }
 
     ref_points.at(i).bounds = Bounds{dist_to_right_bound, dist_to_left_bound};
+
+    // hard_bounds always uses lane boundary (left/right_bound), regardless of soft bounds
+    const double hard_dist_to_left = calcLateralDistToBounds(
+      ref_point_for_bound_search.pose, left_bound, scalar_hard_clearance, true);
+    const double hard_dist_to_right = calcLateralDistToBounds(
+      ref_point_for_bound_search.pose, right_bound, scalar_hard_clearance, false);
+    ref_points.at(i).hard_bounds = Bounds{hard_dist_to_right, hard_dist_to_left};
   }
 
   // extend violated bounds, where the input path is outside the drivable area
@@ -885,6 +929,7 @@ void MPTOptimizer::updateVehicleBounds(
     // NOTE: This clear is required.
     // It seems they sometimes already have previous values.
     ref_points.at(p_idx).bounds_on_constraints.clear();
+    ref_points.at(p_idx).hard_bounds_on_constraints.clear();
     ref_points.at(p_idx).beta.clear();
 
     for (const double lon_offset : vehicle_circle_longitudinal_offsets_) {
@@ -908,7 +953,7 @@ void MPTOptimizer::updateVehicleBounds(
         tier4_autoware_utils::calcOffsetPose(collision_check_pose, 0.0, offset_y, 0.0);
 
       // interpolate bounds
-      const auto bounds = [&]() {
+      const auto interp_bounds_at = [&](auto bounds_getter) {
         const double collision_check_s = ref_points_spline.getAccumulatedLength(p_idx) + lon_offset;
         const size_t collision_check_idx = ref_points_spline.getOffsetIndex(p_idx, lon_offset);
 
@@ -917,20 +962,22 @@ void MPTOptimizer::updateVehicleBounds(
           static_cast<size_t>(ref_points_spline.getSize() - 2));
         const size_t next_idx = prev_idx + 1;
 
-        const auto & prev_bounds = ref_points.at(prev_idx).bounds;
-        const auto & next_bounds = ref_points.at(next_idx).bounds;
-
         const double prev_s = ref_points_spline.getAccumulatedLength(prev_idx);
         const double next_s = ref_points_spline.getAccumulatedLength(next_idx);
-
         const double ratio = std::clamp((collision_check_s - prev_s) / (next_s - prev_s), 0.0, 1.0);
 
-        auto bounds = Bounds::lerp(prev_bounds, next_bounds, ratio);
-        bounds.translate(offset_y);
-        return bounds;
-      }();
+        auto b = Bounds::lerp(bounds_getter(prev_idx), bounds_getter(next_idx), ratio);
+        b.translate(offset_y);
+        return b;
+      };
+
+      const auto bounds = interp_bounds_at(
+        [&](size_t idx) -> const Bounds & { return ref_points.at(idx).bounds; });
+      const auto hard_bounds = interp_bounds_at(
+        [&](size_t idx) -> const Bounds & { return ref_points.at(idx).hard_bounds; });
 
       ref_points.at(p_idx).bounds_on_constraints.push_back(bounds);
+      ref_points.at(p_idx).hard_bounds_on_constraints.push_back(hard_bounds);
       ref_points.at(p_idx).pose_on_constraints.push_back(vehicle_bounds_pose);
     }
   }
@@ -1195,16 +1242,18 @@ MPTOptimizer::ConstraintMatrix MPTOptimizer::calcConstraintMatrix(
       A_rows_end += A_blk_rows;
     }
 
-    // hard constraints
+    // hard constraints — enforce lane boundary (left/right_bound), not obstacle-aware soft bounds
     if (mpt_param_.hard_constraint) {
       const size_t A_blk_rows = N_ref;
+      const auto & [hard_part_ub, hard_part_lb] =
+        extractHardBounds(ref_points, l_idx, bounds_offset);
 
       Eigen::MatrixXd A_blk = Eigen::MatrixXd::Zero(A_blk_rows, A_cols);
       A_blk.block(0, 0, N_ref, N_ref) = CB;
 
       A.block(A_rows_end, 0, A_blk_rows, A_cols) = A_blk;
-      lb.segment(A_rows_end, A_blk_rows) = part_lb - CW;
-      ub.segment(A_rows_end, A_blk_rows) = part_ub - CW;
+      lb.segment(A_rows_end, A_blk_rows) = hard_part_lb - CW;
+      ub.segment(A_rows_end, A_blk_rows) = hard_part_ub - CW;
 
       A_rows_end += A_blk_rows;
     }

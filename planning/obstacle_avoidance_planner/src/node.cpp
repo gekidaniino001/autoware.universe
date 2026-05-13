@@ -271,8 +271,10 @@ PlannerData ObstacleAvoidancePlanner::createPlannerData(const Path & path) const
   PlannerData planner_data;
   planner_data.header = path.header;
   planner_data.traj_points = trajectory_utils::convertToTrajectoryPoints(path.points);
-  planner_data.left_bound = path.left_bound;
-  planner_data.right_bound = path.right_bound;
+  planner_data.left_bound = path.left_bound;    // hard bound (obstacle-aware, absolute limit)
+  planner_data.right_bound = path.right_bound;  // hard bound (obstacle-aware, absolute limit)
+  planner_data.soft_left_bound = path.soft_left_bound;
+  planner_data.soft_right_bound = path.soft_right_bound;
   planner_data.ego_pose = ego_state_ptr_->pose.pose;
   planner_data.ego_vel = ego_state_ptr_->twist.twist.linear.x;
 

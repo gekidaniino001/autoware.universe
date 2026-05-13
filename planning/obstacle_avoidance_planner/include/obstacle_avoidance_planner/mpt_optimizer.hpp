@@ -82,6 +82,10 @@ struct ReferencePoint
   std::vector<Bounds> bounds_on_constraints{};
   std::vector<geometry_msgs::msg::Pose> pose_on_constraints{};
 
+  // hard bounds from lane boundary (left/right_bound), used for hard_constraint
+  Bounds hard_bounds{};
+  std::vector<Bounds> hard_bounds_on_constraints{};
+
   // optimization result
   std::optional<KinematicState> fixed_kinematic_state{std::nullopt};
   KinematicState optimized_kinematic_state{};
@@ -154,6 +158,7 @@ private:
     // common
     double delta_arc_length;
     int num_points;
+    int num_fixed_points;
 
     // kinematics
     double optimization_center_offset;
@@ -248,7 +253,9 @@ private:
   void updateBounds(
     std::vector<ReferencePoint> & ref_points,
     const std::vector<geometry_msgs::msg::Point> & left_bound,
-    const std::vector<geometry_msgs::msg::Point> & right_bound) const;
+    const std::vector<geometry_msgs::msg::Point> & right_bound,
+    const std::vector<geometry_msgs::msg::Point> & soft_left_bound,
+    const std::vector<geometry_msgs::msg::Point> & soft_right_bound) const;
   std::vector<ReferencePoint> extendViolatedBounds(
     const std::vector<ReferencePoint> & ref_points) const;
   void updateVehicleBounds(

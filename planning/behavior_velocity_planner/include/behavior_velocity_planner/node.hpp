@@ -24,6 +24,8 @@
 #include <autoware_auto_perception_msgs/msg/predicted_objects.hpp>
 #include <autoware_auto_planning_msgs/msg/path.hpp>
 #include <autoware_auto_planning_msgs/msg/path_with_lane_id.hpp>
+#include <iino_msgs/msg/iino_path.hpp>
+#include <iino_msgs/msg/iino_path_with_lane_id.hpp>
 #include <nav_msgs/msg/occupancy_grid.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
@@ -53,7 +55,7 @@ private:
   tf2_ros::TransformListener tf_listener_;
 
   // subscriber
-  rclcpp::Subscription<autoware_auto_planning_msgs::msg::PathWithLaneId>::SharedPtr
+  rclcpp::Subscription<iino_msgs::msg::IinoPathWithLaneId>::SharedPtr
     trigger_sub_path_with_lane_id_;
   rclcpp::Subscription<autoware_auto_perception_msgs::msg::PredictedObjects>::SharedPtr
     sub_predicted_objects_;
@@ -75,7 +77,7 @@ private:
   rclcpp::Subscription<VelocityLimit>::SharedPtr sub_external_velocity_limit_;
 
   void onTrigger(
-    const autoware_auto_planning_msgs::msg::PathWithLaneId::ConstSharedPtr input_path_msg);
+    const iino_msgs::msg::IinoPathWithLaneId::ConstSharedPtr input_path_msg);
   void onPredictedObjects(
     const autoware_auto_perception_msgs::msg::PredictedObjects::ConstSharedPtr msg);
   void onNoGroundPointCloud(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg);
@@ -96,7 +98,7 @@ private:
   void onParam();
 
   // publisher
-  rclcpp::Publisher<autoware_auto_planning_msgs::msg::Path>::SharedPtr path_pub_;
+  rclcpp::Publisher<iino_msgs::msg::IinoPath>::SharedPtr path_pub_;
   rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticStatus>::SharedPtr stop_reason_diag_pub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr debug_viz_pub_;
 

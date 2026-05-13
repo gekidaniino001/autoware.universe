@@ -85,7 +85,7 @@ BehaviorVelocityPlannerNode::BehaviorVelocityPlannerNode(const rclcpp::NodeOptio
   using std::placeholders::_1;
   // Trigger Subscriber
   trigger_sub_path_with_lane_id_ =
-    this->create_subscription<autoware_auto_planning_msgs::msg::PathWithLaneId>(
+    this->create_subscription<iino_msgs::msg::IinoPathWithLaneId>(
       "~/input/path_with_lane_id", 1, std::bind(&BehaviorVelocityPlannerNode::onTrigger, this, _1),
       createSubscriptionOptions(this));
 
@@ -143,7 +143,7 @@ BehaviorVelocityPlannerNode::BehaviorVelocityPlannerNode(const rclcpp::NodeOptio
   onParam();
 
   // Publishers
-  path_pub_ = this->create_publisher<autoware_auto_planning_msgs::msg::Path>("~/output/path", 1);
+  path_pub_ = this->create_publisher<iino_msgs::msg::IinoPath>("~/output/path", 1);
   stop_reason_diag_pub_ =
     this->create_publisher<diagnostic_msgs::msg::DiagnosticStatus>("~/output/stop_reason", 1);
   debug_viz_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("~/debug/path", 1);
@@ -393,7 +393,7 @@ void BehaviorVelocityPlannerNode::onVirtualTrafficLightStates(
 }
 
 void BehaviorVelocityPlannerNode::onTrigger(
-  const autoware_auto_planning_msgs::msg::PathWithLaneId::ConstSharedPtr input_path_msg)
+  const iino_msgs::msg::IinoPathWithLaneId::ConstSharedPtr input_path_msg)
 {
   std::unique_lock<std::mutex> lk(mutex_);
 
@@ -416,8 +416,24 @@ void BehaviorVelocityPlannerNode::onTrigger(
     return;
   }
 
-  const autoware_auto_planning_msgs::msg::Path output_path_msg =
-    generatePath(input_path_msg, planner_data_);
+  // Convert IinoPathWithLaneId → PathWithLaneId for internal processing
+  auto path_with_lane_id = std::make_shared<autoware_auto_planning_msgs::msg::PathWithLaneId>();
+  path_with_lane_id->header = input_path_msg->header;
+  path_with_lane_id->points = input_path_msg->points;
+  path_with_lane_id->left_bound = input_path_msg->left_bound;
+  path_with_lane_id->right_bound = input_path_msg->right_bound;
+
+  const autoware_auto_planning_msgs::msg::Path base_path =
+    generatePath(path_with_lane_id, planner_data_);
+
+  // Build IinoPath output, carrying hard/soft bounds through
+  iino_msgs::msg::IinoPath output_path_msg;
+  output_path_msg.header = base_path.header;
+  output_path_msg.points = base_path.points;
+  output_path_msg.left_bound = base_path.left_bound;
+  output_path_msg.right_bound = base_path.right_bound;
+  output_path_msg.soft_left_bound = input_path_msg->soft_left_bound;
+  output_path_msg.soft_right_bound = input_path_msg->soft_right_bound;
 
   lk.unlock();
 
@@ -425,7 +441,7 @@ void BehaviorVelocityPlannerNode::onTrigger(
   stop_reason_diag_pub_->publish(planner_manager_.getStopReasonDiag());
 
   if (debug_viz_pub_->get_subscription_count() > 0) {
-    publishDebugMarker(output_path_msg);
+    publishDebugMarker(base_path);
   }
 }
 
