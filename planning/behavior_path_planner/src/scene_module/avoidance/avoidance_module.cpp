@@ -391,7 +391,7 @@ void AvoidanceModule::fillAvoidanceTargetObjects(
     }
 
     lanelet::ConstLanelet overhang_lanelet;
-    if (!rh->getClosestLaneletWithinRoute(object_closest_pose, &overhang_lanelet)) {
+    if (!rh->getDrivingLanelet(object_closest_pose, &overhang_lanelet)) {
       continue;
     }
 
@@ -2616,7 +2616,7 @@ lanelet::ConstLanelets AvoidanceModule::getAdjacentLane(
   }
 
   lanelet::ConstLanelet current_lane;
-  if (!rh->getClosestLaneletWithinRoute(getEgoPose(), &current_lane)) {
+  if (!rh->getDrivingLanelet(getEgoPose(), &current_lane)) {
     RCLCPP_ERROR(
       rclcpp::get_logger("behavior_path_planner").get_child("avoidance"),
       "failed to find closest lanelet within route!!!");

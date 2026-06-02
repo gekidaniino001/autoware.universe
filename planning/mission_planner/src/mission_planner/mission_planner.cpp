@@ -75,7 +75,9 @@ MissionPlanner::MissionPlanner(const rclcpp::NodeOptions & options)
   sub_odometry_ = create_subscription<Odometry>(
     "/localization/kinematic_state", rclcpp::QoS(1),
     std::bind(&MissionPlanner::on_odometry, this, std::placeholders::_1));
-
+  sub_lanelet_id_route_ = create_subscription<LaneletIdRoute>(
+    "/iino/lanelet_id_route", rclcpp::QoS(1),
+    std::bind(&MissionPlanner::on_lanelet_id_route, this, std::placeholders::_1));
   const auto durable_qos = rclcpp::QoS(1).transient_local();
   pub_marker_ = create_publisher<MarkerArray>("debug/route_marker", durable_qos);
 
@@ -236,6 +238,47 @@ void MissionPlanner::on_set_route_points(
   change_route(route);
   change_state(RouteState::Message::SET);
   res->status.success = true;
+}
+
+void MissionPlanner::on_lanelet_id_route(const LaneletIdRoute::ConstSharedPtr msg)
+{
+  if (!odometry_) {
+    RCLCPP_WARN(get_logger(), "The vehicle pose is not received.");
+    return;
+  }
+
+  if (msg->lanelet_ids.empty()) {
+    RCLCPP_WARN(get_logger(), "Received empty lanelet id list.");
+    return;
+  }
+
+  // route を強制上書き
+  change_route();
+  change_state(RouteState::Message::UNSET);
+
+  PoseStamped goal_pose_stamped;
+  goal_pose_stamped.header = msg->header;
+  goal_pose_stamped.pose = msg->goal;
+  const auto goal_pose = transform_pose(goal_pose_stamped).pose;
+
+  LaneletRoute route;
+  route.start_pose = odometry_->pose.pose;
+  route.goal_pose = goal_pose;
+  route.header.stamp = msg->header.stamp;
+  route.header.frame_id = map_frame_;
+  route.uuid.uuid = generate_random_id();
+
+  // 1. 固定 lanelet 列をそのまま積む
+  for (const auto & id : msg->lanelet_ids) {
+    LaneletSegment segment;
+    segment.preferred_primitive.id = id;
+    segment.preferred_primitive.primitive_type = "lane";
+    segment.primitives.push_back(segment.preferred_primitive);
+    route.segments.push_back(segment);
+  }
+
+  change_route(route);
+  change_state(RouteState::Message::SET);
 }
 
 }  // namespace mission_planner

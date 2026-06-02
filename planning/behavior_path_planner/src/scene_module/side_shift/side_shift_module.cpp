@@ -211,7 +211,7 @@ void SideShiftModule::updateData()
   const auto & p = planner_data_->parameters;
 
   lanelet::ConstLanelet current_lane;
-  if (!route_handler->getClosestLaneletWithinRoute(reference_pose, &current_lane)) {
+  if (!route_handler->getDrivingLanelet(reference_pose, &current_lane)) {
     RCLCPP_ERROR_THROTTLE(
       getLogger(), *clock_, 5000, "failed to find closest lanelet within route!!!");
   }

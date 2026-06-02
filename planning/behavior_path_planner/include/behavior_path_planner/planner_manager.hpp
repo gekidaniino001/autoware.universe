@@ -170,7 +170,7 @@ private:
   lanelet::ConstLanelet updateRootLanelet(const std::shared_ptr<PlannerData> & data) const
   {
     lanelet::ConstLanelet ret{};
-    data->route_handler->getClosestLaneletWithinRoute(data->self_odometry->pose.pose, &ret);
+    data->route_handler->getDrivingLanelet(data->self_odometry->pose.pose, &ret);
     RCLCPP_DEBUG(logger_, "update start lanelet. id:%ld", ret.id());
     return ret;
   }
