@@ -1,7 +1,8 @@
 <launch>
-  <group>
+  <!-- mission_planner is replaced by iino_mission_planner (launched from iino_common_launch) -->
+  <!-- <group>
     <include file="$(find-pkg-share mission_planner)/launch/mission_planner.launch.xml"/>
-  </group>
+  </group> -->
 
   <!-- <group>
     <include file="$(find-pkg-share mission_planner)/launch/goal_pose_visualizer.launch.xml"/>

@@ -3,7 +3,8 @@
   <arg name="map_topic_name" default="/map/vector_map"/>
   <arg name="vehicle_param_file"/>
 
-  <node pkg="behavior_path_planner" exec="behavior_path_planner" name="behavior_path_planner" output="screen">
+  <!-- behavior_path_planner is replaced by iino_behavior_path_planner (launched from iino_common_launch) -->
+  <!-- <node pkg="behavior_path_planner" exec="behavior_path_planner" name="behavior_path_planner" output="screen">
     <remap from="~/input/route" to="$(var input_route_topic_name)"/>
     <remap from="~/input/vector_map" to="$(var map_topic_name)"/>
     <remap from="~/input/perception" to="/perception/object_recognition/objects"/>
@@ -21,7 +22,7 @@
     <param from="$(find-pkg-share tier4_planning_launch)/config/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/behavior_path_planner.param.yaml"/>
     <param from="$(var vehicle_param_file)"/>
     <param name="bt_tree_config_path" value="$(find-pkg-share behavior_path_planner)/config/behavior_path_planner_tree.xml"/>
-  </node>
+  </node> -->
 
   <group>
     <include file="$(find-pkg-share behavior_velocity_planner)/launch/behavior_velocity_planner.launch.xml">
