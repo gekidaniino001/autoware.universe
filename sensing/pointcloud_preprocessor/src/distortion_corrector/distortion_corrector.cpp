@@ -16,6 +16,7 @@
 
 #include "tier4_autoware_utils/math/trigonometry.hpp"
 
+#include <algorithm>
 #include <deque>
 #include <string>
 #include <utility>
@@ -60,21 +61,29 @@ DistortionCorrectorComponent::DistortionCorrectorComponent(const rclcpp::NodeOpt
 void DistortionCorrectorComponent::onTwistWithCovarianceStamped(
   const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr twist_msg)
 {
-  geometry_msgs::msg::TwistStamped msg;
-  msg.header = twist_msg->header;
-  msg.twist = twist_msg->twist.twist;
-  twist_queue_.push_back(msg);
+  try {
+    geometry_msgs::msg::TwistStamped msg;
+    msg.header = twist_msg->header;
+    msg.twist = twist_msg->twist.twist;
+    twist_queue_.push_back(msg);
 
-  while (!twist_queue_.empty()) {
-    // for replay rosbag
-    if (rclcpp::Time(twist_queue_.front().header.stamp) > rclcpp::Time(twist_msg->header.stamp)) {
-      twist_queue_.pop_front();
-    } else if (  // NOLINT
-      rclcpp::Time(twist_queue_.front().header.stamp) <
-      rclcpp::Time(twist_msg->header.stamp) - rclcpp::Duration::from_seconds(1.0)) {
-      twist_queue_.pop_front();
+    // Compare in double seconds: subtracting rclcpp::Duration from a small rclcpp::Time
+    // (e.g. an unfilled header.stamp) throws and would kill the whole component container.
+    const double msg_stamp_sec = rclcpp::Time(twist_msg->header.stamp).seconds();
+    while (!twist_queue_.empty()) {
+      const double front_stamp_sec = rclcpp::Time(twist_queue_.front().header.stamp).seconds();
+      // for replay rosbag
+      if (front_stamp_sec > msg_stamp_sec) {
+        twist_queue_.pop_front();
+      } else if (front_stamp_sec < msg_stamp_sec - 1.0) {  // NOLINT
+        twist_queue_.pop_front();
+      }
+      break;
     }
-    break;
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR_THROTTLE(
+      get_logger(), *get_clock(), 10000 /* ms */,
+      "Exception in onTwistWithCovarianceStamped. Dropping this message: %s", e.what());
   }
 }
 
@@ -84,60 +93,76 @@ void DistortionCorrectorComponent::onImu(const sensor_msgs::msg::Imu::ConstShare
     return;
   }
 
-  tf2::Transform tf2_imu_link_to_base_link{};
-  getTransform(base_link_frame_, imu_msg->header.frame_id, &tf2_imu_link_to_base_link);
-  geometry_msgs::msg::TransformStamped::SharedPtr tf_base2imu_ptr =
-    std::make_shared<geometry_msgs::msg::TransformStamped>();
-  tf_base2imu_ptr->transform.rotation = tf2::toMsg(tf2_imu_link_to_base_link.getRotation());
+  try {
+    tf2::Transform tf2_imu_link_to_base_link{};
+    getTransform(base_link_frame_, imu_msg->header.frame_id, &tf2_imu_link_to_base_link);
+    geometry_msgs::msg::TransformStamped::SharedPtr tf_base2imu_ptr =
+      std::make_shared<geometry_msgs::msg::TransformStamped>();
+    tf_base2imu_ptr->transform.rotation = tf2::toMsg(tf2_imu_link_to_base_link.getRotation());
 
-  geometry_msgs::msg::Vector3Stamped angular_velocity;
-  angular_velocity.vector = imu_msg->angular_velocity;
+    geometry_msgs::msg::Vector3Stamped angular_velocity;
+    angular_velocity.vector = imu_msg->angular_velocity;
 
-  geometry_msgs::msg::Vector3Stamped transformed_angular_velocity;
-  tf2::doTransform(angular_velocity, transformed_angular_velocity, *tf_base2imu_ptr);
-  transformed_angular_velocity.header = imu_msg->header;
-  angular_velocity_queue_.push_back(transformed_angular_velocity);
+    geometry_msgs::msg::Vector3Stamped transformed_angular_velocity;
+    tf2::doTransform(angular_velocity, transformed_angular_velocity, *tf_base2imu_ptr);
+    transformed_angular_velocity.header = imu_msg->header;
+    angular_velocity_queue_.push_back(transformed_angular_velocity);
 
-  while (!angular_velocity_queue_.empty()) {
-    // for replay rosbag
-    if (
-      rclcpp::Time(angular_velocity_queue_.front().header.stamp) >
-      rclcpp::Time(imu_msg->header.stamp)) {
-      angular_velocity_queue_.pop_front();
-    } else if (  // NOLINT
-      rclcpp::Time(angular_velocity_queue_.front().header.stamp) <
-      rclcpp::Time(imu_msg->header.stamp) - rclcpp::Duration::from_seconds(1.0)) {
-      angular_velocity_queue_.pop_front();
+    // Compare in double seconds: subtracting rclcpp::Duration from a small rclcpp::Time
+    // (e.g. an unfilled header.stamp) throws and would kill the whole component container.
+    const double msg_stamp_sec = rclcpp::Time(imu_msg->header.stamp).seconds();
+    while (!angular_velocity_queue_.empty()) {
+      const double front_stamp_sec =
+        rclcpp::Time(angular_velocity_queue_.front().header.stamp).seconds();
+      // for replay rosbag
+      if (front_stamp_sec > msg_stamp_sec) {
+        angular_velocity_queue_.pop_front();
+      } else if (front_stamp_sec < msg_stamp_sec - 1.0) {  // NOLINT
+        angular_velocity_queue_.pop_front();
+      }
+      break;
     }
-    break;
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR_THROTTLE(
+      get_logger(), *get_clock(), 10000 /* ms */,
+      "Exception in onImu. Dropping this message: %s", e.what());
   }
 }
 
 void DistortionCorrectorComponent::onPointCloud(PointCloud2::UniquePtr points_msg)
 {
-  stop_watch_ptr_->toc("processing_time", true);
-  const auto points_sub_count = undistorted_points_pub_->get_subscription_count() +
-                                undistorted_points_pub_->get_intra_process_subscription_count();
+  // Last-resort guard: an uncaught exception here terminates the whole component
+  // container (taking down the driver and the other preprocessing nodes with it),
+  // so log and drop this single cloud instead.
+  try {
+    stop_watch_ptr_->toc("processing_time", true);
+    const auto points_sub_count = undistorted_points_pub_->get_subscription_count() +
+                                  undistorted_points_pub_->get_intra_process_subscription_count();
 
-  if (points_sub_count < 1) {
-    return;
-  }
+    if (points_sub_count < 1) {
+      return;
+    }
 
-  tf2::Transform tf2_base_link_to_sensor{};
-  getTransform(points_msg->header.frame_id, base_link_frame_, &tf2_base_link_to_sensor);
+    tf2::Transform tf2_base_link_to_sensor{};
+    getTransform(points_msg->header.frame_id, base_link_frame_, &tf2_base_link_to_sensor);
 
-  undistortPointCloud(tf2_base_link_to_sensor, *points_msg);
+    undistortPointCloud(tf2_base_link_to_sensor, *points_msg);
 
-  undistorted_points_pub_->publish(std::move(points_msg));
+    undistorted_points_pub_->publish(std::move(points_msg));
 
-  // add processing time for debug
-  if (debug_publisher_) {
-    const double cyclic_time_ms = stop_watch_ptr_->toc("cyclic_time", true);
-    const double processing_time_ms = stop_watch_ptr_->toc("processing_time", true);
-    debug_publisher_->publish<tier4_debug_msgs::msg::Float64Stamped>(
-      "debug/cyclic_time_ms", cyclic_time_ms);
-    debug_publisher_->publish<tier4_debug_msgs::msg::Float64Stamped>(
-      "debug/processing_time_ms", processing_time_ms);
+    // add processing time for debug
+    if (debug_publisher_) {
+      const double cyclic_time_ms = stop_watch_ptr_->toc("cyclic_time", true);
+      const double processing_time_ms = stop_watch_ptr_->toc("processing_time", true);
+      debug_publisher_->publish<tier4_debug_msgs::msg::Float64Stamped>(
+        "debug/cyclic_time_ms", cyclic_time_ms);
+      debug_publisher_->publish<tier4_debug_msgs::msg::Float64Stamped>(
+        "debug/processing_time_ms", processing_time_ms);
+    }
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR_THROTTLE(
+      get_logger(), *get_clock(), 10000 /* ms */,
+      "Exception in onPointCloud. Dropping this cloud: %s", e.what());
   }
 }
 
@@ -186,6 +211,28 @@ bool DistortionCorrectorComponent::undistortPointCloud(
     RCLCPP_WARN_STREAM_THROTTLE(
       get_logger(), *get_clock(), 10000 /* ms */,
       "Required field time stamp doesn't exist in the point cloud.");
+    return false;
+  }
+  // PointCloud2ConstIterator<double> blindly reinterprets the field as FLOAT64;
+  // reject other datatypes instead of reading garbage / past the buffer end.
+  if (time_stamp_field_it->datatype != sensor_msgs::msg::PointField::FLOAT64) {
+    RCLCPP_ERROR_STREAM_THROTTLE(
+      get_logger(), *get_clock(), 10000 /* ms */,
+      "The datatype of the time stamp field is not FLOAT64. Skip undistortion.");
+    return false;
+  }
+
+  // PointCloud2Iterator's constructor throws if a field is missing; validate here
+  // so a malformed cloud cannot take down the whole component container.
+  const auto has_field = [&points](const std::string & name) {
+    return std::any_of(
+      std::cbegin(points.fields), std::cend(points.fields),
+      [&name](const sensor_msgs::msg::PointField & field) { return field.name == name; });
+  };
+  if (!has_field("x") || !has_field("y") || !has_field("z")) {
+    RCLCPP_ERROR_STREAM_THROTTLE(
+      get_logger(), *get_clock(), 10000 /* ms */,
+      "Required field x, y or z doesn't exist in the point cloud.");
     return false;
   }
 
