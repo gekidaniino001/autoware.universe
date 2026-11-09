@@ -1,4 +1,6 @@
 <launch>
+  <arg name="cpu_monitor" default="true"/>
+
   <arg name="cpu_monitor_config_file" default="$(find-pkg-share system_monitor)/config/cpu_monitor.param.yaml"/>
   <arg name="hdd_monitor_config_file" default="$(find-pkg-share system_monitor)/config/hdd_monitor.param.yaml"/>
   <arg name="mem_monitor_config_file" default="$(find-pkg-share system_monitor)/config/mem_monitor.param.yaml"/>
@@ -10,7 +12,7 @@
 
   <group>
     <node_container pkg="rclcpp_components" exec="component_container_mt" name="system_monitor_container" namespace="system_monitor" output="screen">
-      <composable_node pkg="system_monitor" plugin="CPUMonitor" name="cpu_monitor">
+      <composable_node pkg="system_monitor" plugin="CPUMonitor" name="cpu_monitor" if="$(var cpu_monitor)">
         <param from="$(var cpu_monitor_config_file)"/>
       </composable_node>
       <composable_node pkg="system_monitor" plugin="MemMonitor" name="mem_monitor">
